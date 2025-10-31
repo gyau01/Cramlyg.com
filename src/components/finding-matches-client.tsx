@@ -139,7 +139,7 @@ export default function FindingMatchesClient({ userId }: FindingMatchesClientPro
           
           const compatibilityScore = (classScore * classWeight) + (prefScore * preferenceWeight);
 
-          if (compatibilityScore >= 30) {
+          if (compatibilityScore >= 70) {
             matches.push({
               user1_id: userId,
               user2_id: profile.user_id,

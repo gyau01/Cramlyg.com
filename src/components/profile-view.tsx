@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Edit, GraduationCap, BookOpen, Clock, MapPin } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Edit, GraduationCap, BookOpen, Clock, MapPin, User } from "lucide-react";
 import { createClient } from "../../supabase/client";
 
 interface ProfileViewProps {
@@ -12,6 +13,7 @@ interface ProfileViewProps {
 }
 
 export default function ProfileView({ userId }: ProfileViewProps) {
+  const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [classes, setClasses] = useState<any[]>([]);
   const [preferences, setPreferences] = useState<any>(null);
@@ -24,12 +26,14 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   const loadProfile = async () => {
     const supabase = createClient();
 
-    const [profileRes, classesRes, preferencesRes] = await Promise.all([
+    const [userRes, profileRes, classesRes, preferencesRes] = await Promise.all([
+      supabase.from("users").select("full_name, email").eq("user_id", userId).single(),
       supabase.from("student_profiles").select("*").eq("user_id", userId).single(),
       supabase.from("student_classes").select("*").eq("user_id", userId),
       supabase.from("study_preferences").select("*").eq("user_id", userId).single()
     ]);
 
+    setUser(userRes.data);
     setProfile(profileRes.data);
     setClasses(classesRes.data || []);
     setPreferences(preferencesRes.data);
@@ -42,6 +46,22 @@ export default function ProfileView({ userId }: ProfileViewProps) {
 
   return (
     <div className="space-y-6">
+      <Card className="shadow-lg">
+        <CardHeader>
+          <div className="flex items-center gap-4">
+            <Avatar className="h-20 w-20">
+              <AvatarFallback className="bg-blue-600 text-white text-2xl">
+                {user?.full_name?.[0]?.toUpperCase() || "U"}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1">
+              <CardTitle className="text-3xl">{user?.full_name || "User"}</CardTitle>
+              <p className="text-gray-500">{user?.email}</p>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
       <Card className="shadow-lg">
         <CardHeader className="flex flex-row items-start justify-between">
           <div>

@@ -11,14 +11,16 @@ import { createClient } from "../../supabase/client";
 
 interface ChatViewProps {
   userId: string;
+  initialMatch?: any;
 }
 
-export default function ChatView({ userId }: ChatViewProps) {
+export default function ChatView({ userId, initialMatch }: ChatViewProps) {
   const [matches, setMatches] = useState<any[]>([]);
-  const [selectedMatch, setSelectedMatch] = useState<any>(null);
+  const [selectedMatch, setSelectedMatch] = useState<any>(initialMatch || null);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,9 +28,17 @@ export default function ChatView({ userId }: ChatViewProps) {
   }, [userId]);
 
   useEffect(() => {
+    if (initialMatch) {
+      setSelectedMatch(initialMatch);
+    }
+  }, [initialMatch]);
+
+  useEffect(() => {
     if (selectedMatch) {
       loadMessages(selectedMatch.id);
-      subscribeToMessages(selectedMatch.id);
+      markMessagesAsRead(selectedMatch.id);
+      const cleanup = subscribeToMessages(selectedMatch.id);
+      return cleanup;
     }
   }, [selectedMatch]);
 
@@ -53,15 +63,31 @@ export default function ChatView({ userId }: ChatViewProps) {
         const otherId = match.user1_id === userId ? match.user2_id : match.user1_id;
         const { data: otherUser } = await supabase
           .from("users")
-          .select("name, email")
+          .select("full_name, email")
           .eq("user_id", otherId)
           .single();
 
-        return { ...match, otherUser, otherId };
+        // Get unread message count
+        const { count } = await supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .eq("match_id", match.id)
+          .eq("read", false)
+          .neq("sender_id", userId);
+
+        return { ...match, otherUser, otherId, unreadCount: count || 0 };
       })
     );
 
     setMatches(matchDetails);
+    
+    // Update unread counts
+    const counts: Record<string, number> = {};
+    matchDetails.forEach(match => {
+      counts[match.id] = match.unreadCount;
+    });
+    setUnreadCounts(counts);
+    
     setLoading(false);
   };
 
@@ -75,6 +101,23 @@ export default function ChatView({ userId }: ChatViewProps) {
       .order("created_at", { ascending: true });
 
     setMessages(data || []);
+  };
+
+  const markMessagesAsRead = async (matchId: string) => {
+    const supabase = createClient();
+    
+    await supabase
+      .from("messages")
+      .update({ read: true })
+      .eq("match_id", matchId)
+      .neq("sender_id", userId)
+      .eq("read", false);
+
+    // Update unread count for this match
+    setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
+    
+    // Reload matches to update counts
+    loadMatches();
   };
 
   const subscribeToMessages = (matchId: string) => {
@@ -92,6 +135,11 @@ export default function ChatView({ userId }: ChatViewProps) {
         },
         (payload) => {
           setMessages((prev) => [...prev, payload.new]);
+          
+          // If message is from other user, mark as read immediately since chat is open
+          if (payload.new.sender_id !== userId) {
+            markMessagesAsRead(matchId);
+          }
         }
       )
       .subscribe();
@@ -117,6 +165,10 @@ export default function ChatView({ userId }: ChatViewProps) {
     if (!error) {
       setNewMessage("");
     }
+  };
+
+  const handleSelectMatch = (match: any) => {
+    setSelectedMatch(match);
   };
 
   if (loading) {
@@ -147,18 +199,25 @@ export default function ChatView({ userId }: ChatViewProps) {
             {matches.map((match) => (
               <button
                 key={match.id}
-                onClick={() => setSelectedMatch(match)}
-                className={`w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b ${
+                onClick={() => handleSelectMatch(match)}
+                className={`w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b relative ${
                   selectedMatch?.id === match.id ? "bg-blue-50" : ""
                 }`}
               >
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback className="bg-blue-600 text-white">
-                    {match.otherUser?.name?.[0] || "?"}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-blue-600 text-white">
+                      {match.otherUser?.full_name?.[0]?.toUpperCase() || "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                  {unreadCounts[match.id] > 0 && (
+                    <div className="absolute -top-1 -right-1 h-4 w-4 bg-blue-600 rounded-full flex items-center justify-center">
+                      <div className="h-2 w-2 bg-white rounded-full" />
+                    </div>
+                  )}
+                </div>
                 <div className="flex-1 text-left">
-                  <p className="font-medium text-sm">{match.otherUser?.name || "Anonymous"}</p>
+                  <p className="font-medium text-sm">{match.otherUser?.full_name || "User"}</p>
                   <p className="text-xs text-gray-500 truncate">{match.otherUser?.email}</p>
                 </div>
               </button>
@@ -175,11 +234,11 @@ export default function ChatView({ userId }: ChatViewProps) {
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10">
                   <AvatarFallback className="bg-blue-600 text-white">
-                    {selectedMatch.otherUser?.name?.[0] || "?"}
+                    {selectedMatch.otherUser?.full_name?.[0]?.toUpperCase() || "U"}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <CardTitle className="text-lg">{selectedMatch.otherUser?.name || "Anonymous"}</CardTitle>
+                  <CardTitle className="text-lg">{selectedMatch.otherUser?.full_name || "User"}</CardTitle>
                   <p className="text-xs text-gray-500">{selectedMatch.otherUser?.email}</p>
                 </div>
               </div>

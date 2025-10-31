@@ -11,9 +11,10 @@ import { createClient } from "../../supabase/client";
 
 interface MatchesViewProps {
   userId: string;
+  onStartChat?: (match: any) => void;
 }
 
-export default function MatchesView({ userId }: MatchesViewProps) {
+export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [sentRequests, setSentRequests] = useState<any[]>([]);
   const [matches, setMatches] = useState<any[]>([]);
@@ -45,12 +46,12 @@ export default function MatchesView({ userId }: MatchesViewProps) {
     const [pendingRes, sentRes, matchesRes] = await Promise.all([
       supabase
         .from("match_requests")
-        .select("*, sender:users!match_requests_sender_id_fkey(name, email)")
+        .select("*")
         .eq("receiver_id", userId)
         .eq("status", "pending"),
       supabase
         .from("match_requests")
-        .select("*, receiver:users!match_requests_receiver_id_fkey(name, email)")
+        .select("*")
         .eq("sender_id", userId),
       supabase
         .from("matches")
@@ -58,16 +59,41 @@ export default function MatchesView({ userId }: MatchesViewProps) {
         .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
     ]);
 
-    setPendingRequests(pendingRes.data || []);
-    setSentRequests(sentRes.data || []);
+    // Get sender details for pending requests
+    const pendingWithDetails = await Promise.all(
+      (pendingRes.data || []).map(async (request) => {
+        const { data: sender } = await supabase
+          .from("users")
+          .select("full_name, email")
+          .eq("user_id", request.sender_id)
+          .single();
+        return { ...request, sender };
+      })
+    );
 
-    // Get match details
+    // Get receiver details for sent requests
+    const sentWithDetails = await Promise.all(
+      (sentRes.data || []).map(async (request) => {
+        const { data: receiver } = await supabase
+          .from("users")
+          .select("full_name, email")
+          .eq("user_id", request.receiver_id)
+          .single();
+        return { ...request, receiver };
+      })
+    );
+
+    setPendingRequests(pendingWithDetails);
+    setSentRequests(sentWithDetails);
+
+    // Get match details with user info
     const matchDetails = await Promise.all(
       (matchesRes.data || []).map(async (match) => {
         const otherId = match.user1_id === userId ? match.user2_id : match.user1_id;
+        
         const { data: otherUser } = await supabase
           .from("users")
-          .select("name, email")
+          .select("full_name, email")
           .eq("user_id", otherId)
           .single();
         
@@ -132,18 +158,25 @@ export default function MatchesView({ userId }: MatchesViewProps) {
                   <div className="flex items-center gap-4">
                     <Avatar className="h-12 w-12">
                       <AvatarFallback className="bg-green-600 text-white">
-                        {match.otherUser?.name?.[0] || "?"}
+                        {match.otherUser?.full_name?.[0]?.toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <CardTitle className="text-lg">{match.otherUser?.name || "Anonymous"}</CardTitle>
-                      <p className="text-sm text-gray-500">{match.profile?.major}</p>
+                      <CardTitle className="text-lg">{match.otherUser?.full_name || "User"}</CardTitle>
+                      <p className="text-sm text-gray-500">{match.profile?.major || "Student"}</p>
+                      <p className="text-xs text-gray-400">{match.profile?.year_of_study}</p>
                     </div>
-                    <Badge className="bg-green-100 text-green-800">Connected</Badge>
+                    <Badge className="bg-green-100 text-green-800">
+                      {Math.round(match.compatibility_score)}% Match
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Button className="w-full" variant="outline">
+                  <Button 
+                    className="w-full" 
+                    variant="outline"
+                    onClick={() => onStartChat?.(match)}
+                  >
                     <MessageCircle className="h-4 w-4 mr-2" />
                     Send Message
                   </Button>
@@ -170,11 +203,11 @@ export default function MatchesView({ userId }: MatchesViewProps) {
                   <div className="flex items-center gap-4">
                     <Avatar className="h-12 w-12">
                       <AvatarFallback className="bg-blue-600 text-white">
-                        {request.sender?.name?.[0] || "?"}
+                        {request.sender?.full_name?.[0]?.toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <CardTitle className="text-lg">{request.sender?.name || "Anonymous"}</CardTitle>
+                      <CardTitle className="text-lg">{request.sender?.full_name || "User"}</CardTitle>
                       <p className="text-sm text-gray-500">{request.sender?.email}</p>
                     </div>
                   </div>
@@ -225,11 +258,11 @@ export default function MatchesView({ userId }: MatchesViewProps) {
                   <div className="flex items-center gap-4">
                     <Avatar className="h-12 w-12">
                       <AvatarFallback className="bg-purple-600 text-white">
-                        {request.receiver?.name?.[0] || "?"}
+                        {request.receiver?.full_name?.[0]?.toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <CardTitle className="text-lg">{request.receiver?.name || "Anonymous"}</CardTitle>
+                      <CardTitle className="text-lg">{request.receiver?.full_name || "User"}</CardTitle>
                       <p className="text-sm text-gray-500">{request.receiver?.email}</p>
                     </div>
                     <Badge variant={request.status === "pending" ? "secondary" : request.status === "accepted" ? "default" : "destructive"}>

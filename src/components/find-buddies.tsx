@@ -30,7 +30,25 @@ export default function FindBuddies({ userId }: FindBuddiesProps) {
     try {
       const response = await fetch(`/api/matches/find?userId=${userId}`);
       const data = await response.json();
-      setPotentialMatches(data.matches || []);
+      
+      // Ensure we have full_name for each match
+      const supabase = createClient();
+      const matchesWithNames = await Promise.all(
+        (data.matches || []).map(async (match: any) => {
+          const { data: userData } = await supabase
+            .from("users")
+            .select("full_name")
+            .eq("user_id", match.user_id)
+            .single();
+          
+          return {
+            ...match,
+            full_name: userData?.full_name || match.name || match.email?.split('@')[0]
+          };
+        })
+      );
+      
+      setPotentialMatches(matchesWithNames);
     } catch (error) {
       console.error("Error loading matches:", error);
     } finally {
@@ -100,11 +118,11 @@ export default function FindBuddies({ userId }: FindBuddiesProps) {
                 <div className="flex items-start gap-4">
                   <Avatar className="h-16 w-16">
                     <AvatarFallback className="bg-blue-600 text-white text-xl">
-                      {match.name?.[0] || match.email?.[0] || "?"}
+                      {match.full_name?.[0]?.toUpperCase() || match.email?.[0]?.toUpperCase() || "?"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
-                    <CardTitle className="text-xl">{match.name || "Anonymous"}</CardTitle>
+                    <CardTitle className="text-xl">{match.full_name || match.email?.split('@')[0] || "Student"}</CardTitle>
                     <p className="text-sm text-gray-500">{match.major}</p>
                     <Badge variant="secondary" className="mt-2">
                       {match.year_of_study}
@@ -163,7 +181,7 @@ export default function FindBuddies({ userId }: FindBuddiesProps) {
                     <DialogHeader>
                       <DialogTitle>Send Connection Request</DialogTitle>
                       <DialogDescription>
-                        Send a message to {match.name || "this student"} to introduce yourself
+                        Send a message to {match.full_name || "this student"} to introduce yourself
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
