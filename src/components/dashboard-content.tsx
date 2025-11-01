@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, MessageCircle, UserCircle } from "lucide-react";
 import FindBuddies from "./find-buddies";
@@ -13,8 +14,16 @@ interface DashboardContentProps {
 }
 
 export default function DashboardContent({ userId }: DashboardContentProps) {
-  const [activeTab, setActiveTab] = useState("find");
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(tabParam || "find");
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   const handleStartChat = (match: any) => {
     setSelectedMatch(match);
