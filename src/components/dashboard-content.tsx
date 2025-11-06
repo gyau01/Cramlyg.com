@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, MessageCircle, UserCircle } from "lucide-react";
-import FindBuddies from "./find-buddies";
 import MatchesView from "./matches-view";
 import ChatView from "./chat-view";
 import ProfileView from "./profile-view";
@@ -16,7 +15,7 @@ interface DashboardContentProps {
 export default function DashboardContent({ userId }: DashboardContentProps) {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(tabParam || "find");
+  const [activeTab, setActiveTab] = useState(tabParam || "matches");
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
 
   useEffect(() => {
@@ -33,11 +32,7 @@ export default function DashboardContent({ userId }: DashboardContentProps) {
   return (
     <div className="container mx-auto px-4 py-8">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-8">
-          <TabsTrigger value="find" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Find Buddies
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 mb-8">
           <TabsTrigger value="matches" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Matches
@@ -51,10 +46,6 @@ export default function DashboardContent({ userId }: DashboardContentProps) {
             Profile
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="find">
-          <FindBuddies userId={userId} />
-        </TabsContent>
 
         <TabsContent value="matches">
           <MatchesView userId={userId} onStartChat={handleStartChat} />

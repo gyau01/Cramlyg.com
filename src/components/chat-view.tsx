@@ -53,14 +53,15 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
   const loadMatches = async () => {
     const supabase = createClient();
     
+    // Only get matches where current user is user1 to avoid duplicates
     const { data: matchesData } = await supabase
       .from("matches")
       .select("*")
-      .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
+      .eq("user1_id", userId);
 
     const matchDetails = await Promise.all(
       (matchesData || []).map(async (match) => {
-        const otherId = match.user1_id === userId ? match.user2_id : match.user1_id;
+        const otherId = match.user2_id; // Always user2 since we filtered for user1_id
         const { data: otherUser } = await supabase
           .from("users")
           .select("full_name, email")

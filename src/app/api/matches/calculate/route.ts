@@ -65,84 +65,43 @@ export async function POST(request: Request) {
 
       const theirClassCodes = theirClasses.map(c => c.class_code);
 
-      // Calculate matching classes
-      const matchingClasses = userClassCodes.filter(code => 
-        theirClassCodes.includes(code)
-      );
+      // Simple 6-factor scoring system
+      let matchingFactors = 0;
+      const totalFactors = 6;
 
-      // Calculate major match
-      const majorMatch = userProfile.major === profile.major ? 1 : 0;
+      // 1. Classes match (any shared class = match)
+      const hasSharedClass = userClassCodes.some(code => theirClassCodes.includes(code));
+      if (hasSharedClass) matchingFactors++;
 
-      // Calculate year match
-      const yearMatch = userProfile.year_of_study === profile.year_of_study ? 1 : 0;
+      // 2. Major match
+      if (userProfile.major === profile.major) matchingFactors++;
 
-      // Calculate preference similarity
-      let preferenceScore = 0;
-      let totalPreferences = 0;
+      // 3. Year match
+      if (userProfile.year_of_study === profile.year_of_study) matchingFactors++;
 
-      // Study time preference
-      if (userPreferences.study_time_preference && theirPreferences.study_time_preference) {
-        const matchingTimes = userPreferences.study_time_preference.filter(time =>
-          theirPreferences.study_time_preference.includes(time)
-        );
-        preferenceScore += matchingTimes.length;
-        totalPreferences += Math.max(
-          userPreferences.study_time_preference.length,
-          theirPreferences.study_time_preference.length
-        );
-      }
+      // 4. Study time preference match (any overlap = match)
+      const userTimes = userPreferences.study_time_preference || [];
+      const theirTimes = theirPreferences.study_time_preference || [];
+      const hasSharedTime = userTimes.some(time => theirTimes.includes(time));
+      if (hasSharedTime) matchingFactors++;
 
-      // Study location preference
-      if (userPreferences.study_location_preference && theirPreferences.study_location_preference) {
-        const matchingLocations = userPreferences.study_location_preference.filter(loc =>
-          theirPreferences.study_location_preference.includes(loc)
-        );
-        preferenceScore += matchingLocations.length;
-        totalPreferences += Math.max(
-          userPreferences.study_location_preference.length,
-          theirPreferences.study_location_preference.length
-        );
-      }
+      // 5. Study location preference match (any overlap = match)
+      const userLocs = userPreferences.study_location_preference || [];
+      const theirLocs = theirPreferences.study_location_preference || [];
+      const hasSharedLocation = userLocs.some(loc => theirLocs.includes(loc));
+      if (hasSharedLocation) matchingFactors++;
 
-      // Group size preference
-      if (userPreferences.group_size_preference === theirPreferences.group_size_preference) {
-        preferenceScore += 1;
-      }
-      totalPreferences += 1;
+      // 6. Study style match (any overlap = match)
+      const userStyles = userPreferences.study_style || [];
+      const theirStyles = theirPreferences.study_style || [];
+      const hasSharedStyle = userStyles.some(style => theirStyles.includes(style));
+      if (hasSharedStyle) matchingFactors++;
 
-      // Study style preference
-      if (userPreferences.study_style && theirPreferences.study_style) {
-        const matchingStyles = userPreferences.study_style.filter(style =>
-          theirPreferences.study_style.includes(style)
-        );
-        preferenceScore += matchingStyles.length;
-        totalPreferences += Math.max(
-          userPreferences.study_style.length,
-          theirPreferences.study_style.length
-        );
-      }
+      // Calculate compatibility score
+      const compatibilityScore = (matchingFactors / totalFactors) * 100;
 
-      // Calculate final compatibility score with weights
-      const classWeight = 0.4;
-      const majorWeight = 0.2;
-      const yearWeight = 0.1;
-      const preferenceWeight = 0.3;
-      
-      const classScore = userClassCodes.length > 0 
-        ? (matchingClasses.length / Math.max(userClassCodes.length, theirClassCodes.length)) * 100 
-        : 0;
-      const majorScore = majorMatch * 100;
-      const yearScore = yearMatch * 100;
-      const prefScore = totalPreferences > 0 ? (preferenceScore / totalPreferences) * 100 : 0;
-      
-      const compatibilityScore = 
-        (classScore * classWeight) + 
-        (majorScore * majorWeight) + 
-        (yearScore * yearWeight) + 
-        (prefScore * preferenceWeight);
-
-      // Lower threshold to 30% to find more matches
-      if (compatibilityScore >= 30) {
+      // Only create match if at least 1 factor matches
+      if (matchingFactors >= 1) {
         matches.push({
           user1_id: userId,
           user2_id: profile.user_id,
