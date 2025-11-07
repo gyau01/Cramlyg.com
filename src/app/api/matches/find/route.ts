@@ -1,6 +1,11 @@
 import { createClient } from "../../../../../supabase/server";
 import { NextResponse } from "next/server";
 
+// Normalize class codes for comparison (remove spaces, convert to uppercase)
+function normalizeClassCode(code: string): string {
+  return code.replace(/\s+/g, '').toUpperCase();
+}
+
 export async function GET(request: Request) {
   try {
     const supabase = await createClient();
@@ -31,7 +36,7 @@ export async function GET(request: Request) {
       .eq("user_id", userId)
       .single();
 
-    const myClassCodes = myClasses?.map(c => c.class_code) || [];
+    const myClassCodes = myClasses?.map(c => normalizeClassCode(c.class_code)) || [];
 
     // Get all other users with completed profiles
     const { data: otherProfiles } = await supabase
@@ -56,7 +61,7 @@ export async function GET(request: Request) {
       ...existingMatches?.map(m => m.user1_id === userId ? m.user2_id : m.user1_id) || []
     ]);
 
-    // Calculate compatibility scores
+    // Calculate compatibility scores using 6-factor system
     const matches = await Promise.all(
       otherProfiles
         ?.filter(profile => !excludedIds.has(profile.user_id))
@@ -72,45 +77,48 @@ export async function GET(request: Request) {
             .eq("user_id", profile.user_id)
             .single();
 
-          const theirClassCodes = theirClasses?.map(c => c.class_code) || [];
-          const sharedClasses = myClassCodes.filter(code => theirClassCodes.includes(code));
+          const theirClassCodes = theirClasses?.map(c => normalizeClassCode(c.class_code)) || [];
 
-          // Calculate compatibility score
-          let score = 0;
+          // Data structure for matching criteria (same as calculate route)
+          const matchCriteria = {
+            classes: myClassCodes.some(code => theirClassCodes.includes(code)),
+            major: myProfile?.major === profile.major,
+            year: myProfile?.year_of_study === profile.year_of_study,
+            studyTime: (myPreferences?.study_time_preference || []).some(time => 
+              (theirPreferences?.study_time_preference || []).includes(time)
+            ),
+            location: (myPreferences?.study_location_preference || []).some(loc => 
+              (theirPreferences?.study_location_preference || []).includes(loc)
+            ),
+            style: (myPreferences?.study_style || []).some(style => 
+              (theirPreferences?.study_style || []).includes(style)
+            )
+          };
 
-          // Shared classes (40 points max)
-          score += Math.min(sharedClasses.length * 20, 40);
+          // Count matching factors
+          const matchingFactors = Object.values(matchCriteria).filter(Boolean).length;
+          const totalFactors = Object.keys(matchCriteria).length;
+          const compatibilityScore = (matchingFactors / totalFactors) * 100;
 
-          // Same major (20 points)
-          if (myProfile?.major === profile.major) score += 20;
-
-          // Similar year (10 points)
-          if (myProfile?.year_of_study === profile.year_of_study) score += 10;
-
-          // Matching study preferences (30 points max)
-          const timeOverlap = myPreferences?.study_time_preference?.filter(
-            (t: string) => theirPreferences?.study_time_preference?.includes(t)
-          ).length || 0;
-          score += Math.min(timeOverlap * 5, 15);
-
-          const locationOverlap = myPreferences?.study_location_preference?.filter(
-            (l: string) => theirPreferences?.study_location_preference?.includes(l)
-          ).length || 0;
-          score += Math.min(locationOverlap * 5, 15);
+          const sharedClasses = myClasses?.filter(myClass => 
+            theirClasses?.some(theirClass => 
+              normalizeClassCode(myClass.class_code) === normalizeClassCode(theirClass.class_code)
+            )
+          ).map(c => c.class_code) || [];
 
           return {
             ...profile,
             email: profile.users?.email,
             name: profile.users?.name,
             shared_classes: sharedClasses,
-            compatibility_score: Math.round(score)
+            compatibility_score: Math.round(compatibilityScore * 100) / 100
           };
         }) || []
     );
 
-    // Sort by compatibility score and return top matches
+    // Sort by compatibility score and return matches with at least 1 matching factor
     const sortedMatches = matches
-      .filter(m => m.compatibility_score > 20)
+      .filter(m => m.compatibility_score > 0)
       .sort((a, b) => b.compatibility_score - a.compatibility_score)
       .slice(0, 20);
 

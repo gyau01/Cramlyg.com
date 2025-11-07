@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageCircle, Send } from "lucide-react";
+import { MessageCircle, Send, Image as ImageIcon, X } from "lucide-react";
 import { createClient } from "../../supabase/client";
 
 interface ChatViewProps {
@@ -21,7 +21,11 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadMatches();
@@ -53,7 +57,6 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
   const loadMatches = async () => {
     const supabase = createClient();
     
-    // Only get matches where current user is user1 to avoid duplicates
     const { data: matchesData } = await supabase
       .from("matches")
       .select("*")
@@ -61,14 +64,13 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
 
     const matchDetails = await Promise.all(
       (matchesData || []).map(async (match) => {
-        const otherId = match.user2_id; // Always user2 since we filtered for user1_id
+        const otherId = match.user2_id;
         const { data: otherUser } = await supabase
           .from("users")
           .select("full_name, email")
           .eq("user_id", otherId)
           .single();
 
-        // Get unread message count
         const { count } = await supabase
           .from("messages")
           .select("*", { count: "exact", head: true })
@@ -76,15 +78,34 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
           .eq("read", false)
           .neq("sender_id", userId);
 
-        return { ...match, otherUser, otherId, unreadCount: count || 0 };
+        const { data: lastMessage } = await supabase
+          .from("messages")
+          .select("created_at")
+          .eq("match_id", match.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        return { 
+          ...match, 
+          otherUser, 
+          otherId, 
+          unreadCount: count || 0,
+          lastMessageTime: lastMessage?.created_at || match.created_at
+        };
       })
     );
 
-    setMatches(matchDetails);
+    const sortedMatches = matchDetails.sort((a, b) => {
+      const timeA = new Date(a.lastMessageTime).getTime();
+      const timeB = new Date(b.lastMessageTime).getTime();
+      return timeB - timeA;
+    });
+
+    setMatches(sortedMatches);
     
-    // Update unread counts
     const counts: Record<string, number> = {};
-    matchDetails.forEach(match => {
+    sortedMatches.forEach(match => {
       counts[match.id] = match.unreadCount;
     });
     setUnreadCounts(counts);
@@ -114,10 +135,7 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       .neq("sender_id", userId)
       .eq("read", false);
 
-    // Update unread count for this match
     setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
-    
-    // Reload matches to update counts
     loadMatches();
   };
 
@@ -137,10 +155,11 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
         (payload) => {
           setMessages((prev) => [...prev, payload.new]);
           
-          // If message is from other user, mark as read immediately since chat is open
           if (payload.new.sender_id !== userId) {
             markMessagesAsRead(matchId);
           }
+          
+          loadMatches();
         }
       )
       .subscribe();
@@ -150,22 +169,77 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
     };
   };
 
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedMatch) return;
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
+  const clearImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const uploadImage = async (file: File): Promise<string | null> => {
+    const supabase = createClient();
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}/${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from('chat-images')
+      .upload(fileName, file);
+
+    if (error) {
+      console.error('Upload error:', error);
+      return null;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('chat-images')
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  };
+
+  const sendMessage = async () => {
+    if ((!newMessage.trim() && !selectedImage) || !selectedMatch) return;
+
+    setUploading(true);
     const supabase = createClient();
     
+    let imageUrl = null;
+    if (selectedImage) {
+      imageUrl = await uploadImage(selectedImage);
+      if (!imageUrl) {
+        setUploading(false);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("messages")
       .insert({
         match_id: selectedMatch.id,
         sender_id: userId,
-        content: newMessage.trim()
+        content: newMessage.trim() || '',
+        image_url: imageUrl
       });
 
     if (!error) {
       setNewMessage("");
+      clearImage();
+      loadMatches();
     }
+    setUploading(false);
   };
 
   const handleSelectMatch = (match: any) => {
@@ -259,7 +333,15 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                             : "bg-gray-100 text-gray-900"
                         }`}
                       >
-                        <p className="text-sm">{message.content}</p>
+                        {message.image_url && (
+                          <img 
+                            src={message.image_url} 
+                            alt="Shared image" 
+                            className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90"
+                            onClick={() => window.open(message.image_url, '_blank')}
+                          />
+                        )}
+                        {message.content && <p className="text-sm">{message.content}</p>}
                         <p className={`text-xs mt-1 ${message.sender_id === userId ? "text-blue-100" : "text-gray-500"}`}>
                           {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </p>
@@ -270,15 +352,43 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                 </div>
               </ScrollArea>
               <div className="p-4 border-t">
+                {imagePreview && (
+                  <div className="mb-2 relative inline-block">
+                    <img src={imagePreview} alt="Preview" className="h-20 rounded-lg" />
+                    <button
+                      onClick={clearImage}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
                 <div className="flex gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                  </Button>
                   <Input
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                    onKeyPress={(e) => e.key === "Enter" && !uploading && sendMessage()}
                     placeholder="Type a message..."
                     className="flex-1"
+                    disabled={uploading}
                   />
-                  <Button onClick={sendMessage} disabled={!newMessage.trim()}>
+                  <Button onClick={sendMessage} disabled={(!newMessage.trim() && !selectedImage) || uploading}>
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
