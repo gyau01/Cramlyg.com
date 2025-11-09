@@ -362,6 +362,7 @@ export type Database = {
           id: string
           image: string | null
           name: string | null
+          profile_picture_url: string | null
           subscription: string | null
           token_identifier: string
           updated_at: string | null
@@ -376,6 +377,7 @@ export type Database = {
           id: string
           image?: string | null
           name?: string | null
+          profile_picture_url?: string | null
           subscription?: string | null
           token_identifier: string
           updated_at?: string | null
@@ -390,6 +392,7 @@ export type Database = {
           id?: string
           image?: string | null
           name?: string | null
+          profile_picture_url?: string | null
           subscription?: string | null
           token_identifier?: string
           updated_at?: string | null

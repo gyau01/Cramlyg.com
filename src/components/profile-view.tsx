@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Edit, GraduationCap, BookOpen, Clock, MapPin, User } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Edit, GraduationCap, BookOpen, Clock, MapPin, Camera, Upload } from "lucide-react";
 import { createClient } from "../../supabase/client";
 
 interface ProfileViewProps {
@@ -18,6 +18,8 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [preferences, setPreferences] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadProfile();
@@ -27,7 +29,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
     const supabase = createClient();
 
     const [userRes, profileRes, classesRes, preferencesRes] = await Promise.all([
-      supabase.from("users").select("full_name, email").eq("user_id", userId).single(),
+      supabase.from("users").select("full_name, email, profile_picture_url").eq("user_id", userId).single(),
       supabase.from("student_profiles").select("*").eq("user_id", userId).single(),
       supabase.from("student_classes").select("*").eq("user_id", userId),
       supabase.from("study_preferences").select("*").eq("user_id", userId).single()
@@ -40,6 +42,60 @@ export default function ProfileView({ userId }: ProfileViewProps) {
     setLoading(false);
   };
 
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) {
+      alert('Please select a valid image file');
+      return;
+    }
+
+    setUploading(true);
+    const supabase = createClient();
+
+    // Delete old profile picture if exists
+    if (user?.profile_picture_url) {
+      const oldPath = user.profile_picture_url.split('/profile-pictures/')[1];
+      if (oldPath) {
+        await supabase.storage.from('profile-pictures').remove([oldPath]);
+      }
+    }
+
+    // Upload new image
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}/profile.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('profile-pictures')
+      .upload(fileName, file, { upsert: true });
+
+    if (uploadError) {
+      console.error('Upload error:', uploadError);
+      alert('Failed to upload image. Please try again.');
+      setUploading(false);
+      return;
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('profile-pictures')
+      .getPublicUrl(fileName);
+
+    // Update user record
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ profile_picture_url: publicUrl })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      console.error('Update error:', updateError);
+      alert('Failed to update profile. Please try again.');
+    } else {
+      setUser({ ...user, profile_picture_url: publicUrl });
+    }
+
+    setUploading(false);
+  };
+
   if (loading) {
     return <div className="text-center py-12">Loading profile...</div>;
   }
@@ -49,11 +105,34 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-4">
-            <Avatar className="h-20 w-20">
-              <AvatarFallback className="bg-blue-600 text-white text-2xl">
-                {user?.full_name?.[0]?.toUpperCase() || "U"}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative">
+              <Avatar className="h-20 w-20">
+                {user?.profile_picture_url && (
+                  <AvatarImage src={user.profile_picture_url} alt={user?.full_name} />
+                )}
+                <AvatarFallback className="bg-blue-600 text-white text-2xl">
+                  {user?.full_name?.[0]?.toUpperCase() || "U"}
+                </AvatarFallback>
+              </Avatar>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="absolute bottom-0 right-0 bg-blue-600 text-white rounded-full p-1.5 hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {uploading ? (
+                  <Upload className="h-3 w-3 animate-pulse" />
+                ) : (
+                  <Camera className="h-3 w-3" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+            </div>
             <div className="flex-1">
               <CardTitle className="text-3xl">{user?.full_name || "User"}</CardTitle>
               <p className="text-gray-500">{user?.email}</p>

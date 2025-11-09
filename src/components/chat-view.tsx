@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageCircle, Send, Image as ImageIcon, X } from "lucide-react";
 import { createClient } from "../../supabase/client";
@@ -71,7 +71,7 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
         
         const { data: otherUser } = await supabase
           .from("users")
-          .select("full_name, email")
+          .select("full_name, email, profile_picture_url")
           .eq("user_id", otherId)
           .single();
 
@@ -180,7 +180,21 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
             markMessagesAsRead(matchId);
           }
           
-          loadMatches();
+          // Update match order when receiving a message
+          setMatches(prevMatches => {
+            const updatedMatches = prevMatches.map(match => 
+              match.id === matchId 
+                ? { ...match, lastMessageTime: payload.new.created_at }
+                : match
+            );
+            
+            // Sort by lastMessageTime
+            return updatedMatches.sort((a, b) => {
+              const timeA = new Date(a.lastMessageTime).getTime();
+              const timeB = new Date(b.lastMessageTime).getTime();
+              return timeB - timeA;
+            });
+          });
         }
       )
       .subscribe();
@@ -276,6 +290,23 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       console.log('Message sent successfully:', data);
       setNewMessage("");
       clearImage();
+      
+      // Update the match's lastMessageTime to current time
+      setMatches(prevMatches => {
+        const updatedMatches = prevMatches.map(match => 
+          match.id === selectedMatch.id 
+            ? { ...match, lastMessageTime: new Date().toISOString() }
+            : match
+        );
+        
+        // Sort by lastMessageTime
+        return updatedMatches.sort((a, b) => {
+          const timeA = new Date(a.lastMessageTime).getTime();
+          const timeB = new Date(b.lastMessageTime).getTime();
+          return timeB - timeA;
+        });
+      });
+      
       setTimeout(() => {
         loadMessages(selectedMatch.id);
       }, 500);
@@ -351,6 +382,9 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                 >
                   <div className="relative">
                     <Avatar className="h-10 w-10">
+                      {match.otherUser?.profile_picture_url && (
+                        <AvatarImage src={match.otherUser.profile_picture_url} alt={match.otherUser?.full_name} />
+                      )}
                       <AvatarFallback className="bg-blue-600 text-white">
                         {match.otherUser?.full_name?.[0]?.toUpperCase() || "U"}
                       </AvatarFallback>
@@ -378,6 +412,9 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
               <CardHeader className="border-b">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
+                    {selectedMatch.otherUser?.profile_picture_url && (
+                      <AvatarImage src={selectedMatch.otherUser.profile_picture_url} alt={selectedMatch.otherUser?.full_name} />
+                    )}
                     <AvatarFallback className="bg-blue-600 text-white">
                       {selectedMatch.otherUser?.full_name?.[0]?.toUpperCase() || "U"}
                     </AvatarFallback>

@@ -3,30 +3,32 @@ import { useEffect, useState } from 'react'
 import { UserCircle } from 'lucide-react'
 import { Button } from './ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
-import { Avatar, AvatarFallback } from './ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import { createClient } from '../../supabase/client'
 import { useRouter } from 'next/navigation'
 
 export default function UserProfile() {
     const [userName, setUserName] = useState<string>("")
+    const [profilePicture, setProfilePicture] = useState<string | null>(null)
     const supabase = createClient()
     const router = useRouter()
 
     useEffect(() => {
-        loadUserName()
+        loadUserData()
     }, [])
 
-    const loadUserName = async () => {
+    const loadUserData = async () => {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
             const { data } = await supabase
                 .from("users")
-                .select("full_name")
+                .select("full_name, profile_picture_url")
                 .eq("user_id", user.id)
                 .single()
             
-            if (data?.full_name) {
-                setUserName(data.full_name)
+            if (data) {
+                setUserName(data.full_name || "")
+                setProfilePicture(data.profile_picture_url)
             }
         }
     }
@@ -36,6 +38,7 @@ export default function UserProfile() {
             <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
                     <Avatar className="h-8 w-8">
+                        {profilePicture && <AvatarImage src={profilePicture} alt={userName} />}
                         <AvatarFallback className="bg-blue-600 text-white">
                             {userName?.[0]?.toUpperCase() || <UserCircle className="h-5 w-5" />}
                         </AvatarFallback>
