@@ -7,6 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Edit, GraduationCap, BookOpen, Clock, MapPin, Camera, Upload } from "lucide-react";
 import { createClient } from "../../supabase/client";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { X, Plus } from "lucide-react";
 
 interface ProfileViewProps {
   userId: string;
@@ -20,6 +25,11 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingClasses, setEditingClasses] = useState(false);
+  const [editingPreferences, setEditingPreferences] = useState(false);
+  const [newClass, setNewClass] = useState({ class_code: "", class_name: "", semester: "" });
+  const [editedClasses, setEditedClasses] = useState<any[]>([]);
+  const [editedPreferences, setEditedPreferences] = useState<any>(null);
 
   useEffect(() => {
     loadProfile();
@@ -94,6 +104,79 @@ export default function ProfileView({ userId }: ProfileViewProps) {
     }
 
     setUploading(false);
+  };
+
+  const handleEditClasses = () => {
+    setEditedClasses([...classes]);
+    setEditingClasses(true);
+  };
+
+  const handleAddClass = () => {
+    if (newClass.class_code && newClass.class_name && newClass.semester) {
+      setEditedClasses([...editedClasses, { ...newClass, id: `temp-${Date.now()}` }]);
+      setNewClass({ class_code: "", class_name: "", semester: "" });
+    }
+  };
+
+  const handleRemoveClass = (id: string) => {
+    setEditedClasses(editedClasses.filter(c => c.id !== id));
+  };
+
+  const handleSaveClasses = async () => {
+    const supabase = createClient();
+    
+    // Delete all existing classes
+    await supabase.from("student_classes").delete().eq("user_id", userId);
+    
+    // Insert new classes
+    const classesToInsert = editedClasses.map(({ id, ...cls }) => ({
+      ...cls,
+      user_id: userId
+    }));
+    
+    const { error } = await supabase.from("student_classes").insert(classesToInsert);
+    
+    if (error) {
+      alert("Failed to save classes: " + error.message);
+    } else {
+      setClasses(editedClasses);
+      setEditingClasses(false);
+    }
+  };
+
+  const handleEditPreferences = () => {
+    setEditedPreferences({ ...preferences });
+    setEditingPreferences(true);
+  };
+
+  const togglePreferenceArray = (field: string, value: string) => {
+    const current = editedPreferences[field] || [];
+    const updated = current.includes(value)
+      ? current.filter((v: string) => v !== value)
+      : [...current, value];
+    setEditedPreferences({ ...editedPreferences, [field]: updated });
+  };
+
+  const handleSavePreferences = async () => {
+    const supabase = createClient();
+    
+    const { error } = await supabase
+      .from("study_preferences")
+      .update({
+        study_time_preference: editedPreferences.study_time_preference,
+        study_location_preference: editedPreferences.study_location_preference,
+        group_size_preference: editedPreferences.group_size_preference,
+        study_style: editedPreferences.study_style,
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", userId);
+    
+    if (error) {
+      alert("Failed to save preferences: " + error.message);
+    } else {
+      setPreferences(editedPreferences);
+      setEditingPreferences(false);
+    }
   };
 
   if (loading) {
@@ -186,11 +269,94 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       </Card>
 
       <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BookOpen className="h-5 w-5 text-blue-600" />
-            Current Classes
-          </CardTitle>
+        <CardHeader className="flex flex-row items-start justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-blue-600" />
+              Current Classes
+            </CardTitle>
+          </div>
+          <Dialog open={editingClasses} onOpenChange={setEditingClasses}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" onClick={handleEditClasses}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Classes</DialogTitle>
+                <DialogDescription>
+                  Add or remove classes. This will update your match recommendations.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-3">
+                  {editedClasses.map((cls) => (
+                    <div key={cls.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-medium">{cls.class_code} - {cls.class_name}</div>
+                        <div className="text-sm text-gray-500">{cls.semester}</div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveClass(cls.id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="border-t pt-4">
+                  <Label className="text-base mb-3 block">Add New Class</Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label htmlFor="class_code">Class Code</Label>
+                      <Input
+                        id="class_code"
+                        placeholder="CS101"
+                        value={newClass.class_code}
+                        onChange={(e) => setNewClass({ ...newClass, class_code: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="class_name">Class Name</Label>
+                      <Input
+                        id="class_name"
+                        placeholder="Intro to CS"
+                        value={newClass.class_name}
+                        onChange={(e) => setNewClass({ ...newClass, class_name: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="semester">Semester</Label>
+                      <Input
+                        id="semester"
+                        placeholder="Fall 2024"
+                        value={newClass.semester}
+                        onChange={(e) => setNewClass({ ...newClass, semester: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <Button onClick={handleAddClass} className="mt-3 w-full" variant="outline">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Class
+                  </Button>
+                </div>
+                
+                <div className="flex gap-2 pt-4">
+                  <Button onClick={handleSaveClasses} className="flex-1">
+                    Save Changes
+                  </Button>
+                  <Button variant="outline" onClick={() => setEditingClasses(false)} className="flex-1">
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           {classes.length > 0 ? (
@@ -214,11 +380,113 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       </Card>
 
       <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-blue-600" />
-            Study Preferences
-          </CardTitle>
+        <CardHeader className="flex flex-row items-start justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-blue-600" />
+              Study Preferences
+            </CardTitle>
+          </div>
+          <Dialog open={editingPreferences} onOpenChange={setEditingPreferences}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" onClick={handleEditPreferences}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Study Preferences</DialogTitle>
+                <DialogDescription>
+                  Update your preferences to find better study matches.
+                </DialogDescription>
+              </DialogHeader>
+              {editedPreferences && (
+                <div className="space-y-6 py-4">
+                  <div>
+                    <Label className="text-base mb-3 block">Study Times</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {["Morning", "Afternoon", "Evening", "Night"].map((time) => (
+                        <div key={time} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`time-${time}`}
+                            checked={editedPreferences.study_time_preference?.includes(time)}
+                            onCheckedChange={() => togglePreferenceArray("study_time_preference", time)}
+                          />
+                          <label htmlFor={`time-${time}`} className="text-sm cursor-pointer">
+                            {time}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-base mb-3 block">Study Locations</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {["Library", "Coffee Shop", "Dorm", "Online"].map((location) => (
+                        <div key={location} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`location-${location}`}
+                            checked={editedPreferences.study_location_preference?.includes(location)}
+                            onCheckedChange={() => togglePreferenceArray("study_location_preference", location)}
+                          />
+                          <label htmlFor={`location-${location}`} className="text-sm cursor-pointer">
+                            {location}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-base mb-3 block">Study Style</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {["Visual", "Auditory", "Reading/Writing", "Kinesthetic"].map((style) => (
+                        <div key={style} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`style-${style}`}
+                            checked={editedPreferences.study_style?.includes(style)}
+                            onCheckedChange={() => togglePreferenceArray("study_style", style)}
+                          />
+                          <label htmlFor={`style-${style}`} className="text-sm cursor-pointer">
+                            {style}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-base mb-3 block">Group Size Preference</Label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {["One-on-one", "Small group (3-5)", "Large group (6+)"].map((size) => (
+                        <div key={size} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`size-${size}`}
+                            checked={editedPreferences.group_size_preference === size}
+                            onCheckedChange={() => setEditedPreferences({ ...editedPreferences, group_size_preference: size })}
+                          />
+                          <label htmlFor={`size-${size}`} className="text-sm cursor-pointer">
+                            {size}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-4">
+                    <Button onClick={handleSavePreferences} className="flex-1">
+                      Save Changes
+                    </Button>
+                    <Button variant="outline" onClick={() => setEditingPreferences(false)} className="flex-1">
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
