@@ -73,10 +73,10 @@ export async function POST(request: Request) {
         classes: userClassCodes.some(code => theirClassCodes.includes(code)),
         major: userProfile.major === profile.major,
         year: userProfile.year_of_study === profile.year_of_study,
-        studyTime: (userPreferences.study_time_preference || []).some(time => 
+        studyTime: (userPreferences.study_time_preference || []).some((time: string) =>
           (theirPreferences.study_time_preference || []).includes(time)
         ),
-        location: (userPreferences.study_location_preference || []).some(loc => 
+        location: (userPreferences.study_location_preference || []).some((loc: string) => 
           (theirPreferences.study_location_preference || []).includes(loc)
         ),
         style: (userPreferences.study_style || []).some(style => 
