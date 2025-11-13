@@ -84,15 +84,15 @@ export async function GET(request: Request) {
             classes: myClassCodes.some(code => theirClassCodes.includes(code)),
             major: myProfile?.major === profile.major,
             year: myProfile?.year_of_study === profile.year_of_study,
-            studyTime: (myPreferences?.study_time_preference || []).some(time => 
-              (theirPreferences?.study_time_preference || []).includes(time)
-            ),
-            location: (myPreferences?.study_location_preference || []).some(loc => 
-              (theirPreferences?.study_location_preference || []).includes(loc)
-            ),
-            style: (myPreferences?.study_style || []).some(style => 
-              (theirPreferences?.study_style || []).includes(style)
-            )
+            studyTime: (myPreferences?.study_time_preference || []).some((time: string) =>
+          (theirPreferences?.study_time_preference || []).includes(time)
+        ),
+        location: (myPreferences?.study_location_preference || []).some((loc: string) =>
+          (theirPreferences?.study_location_preference || []).includes(loc)
+        ),
+        style: (myPreferences?.study_style || []).some((style: string) =>
+          (theirPreferences?.study_style || []).includes(style)
+        )
           };
 
           // Count matching factors
