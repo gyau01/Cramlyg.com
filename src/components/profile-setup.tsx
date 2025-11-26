@@ -37,6 +37,8 @@ export default function ProfileSetup() {
   const [studyLocations, setStudyLocations] = useState<string[]>([]);
   const [groupSize, setGroupSize] = useState("");
   const [studyStyles, setStudyStyles] = useState<string[]>([]);
+  const [classMatchingPreference, setClassMatchingPreference] = useState<string>("specific");
+  const [selectedClassCode, setSelectedClassCode] = useState<string>("");
 
   const addClass = () => {
     setClasses([...classes, { code: "", name: "", semester: "" }]);
@@ -61,6 +63,17 @@ export default function ProfileSetup() {
   };
 
   const handleSubmit = async () => {
+    // Validate: if specific class matching is selected, ensure a class is selected
+    if (classMatchingPreference === "specific" && !selectedClassCode) {
+      const validClasses = classes.filter(c => c.code && c.name);
+      if (validClasses.length === 0) {
+        alert("Please add at least one class before selecting specific class matching.");
+        return;
+      }
+      alert("Please select a class for specific class matching.");
+      return;
+    }
+    
     setLoading(true);
     try {
       const response = await fetch("/api/profile/setup", {
@@ -69,15 +82,26 @@ export default function ProfileSetup() {
         body: JSON.stringify({
           profile: { university, major, yearOfStudy, gpa: parseFloat(gpa), bio },
           classes: classes.filter(c => c.code && c.name),
-          preferences: { studyTimes, studyLocations, groupSize, studyStyles }
+          preferences: { 
+            studyTimes, 
+            studyLocations, 
+            groupSize, 
+            studyStyles, 
+            classMatchingPreference,
+            selectedClassCode: classMatchingPreference === "specific" ? selectedClassCode : null
+          }
         })
       });
 
       if (response.ok) {
         router.push("/dashboard/finding-matches");
+      } else {
+        const errorData = await response.json();
+        alert("Failed to save profile: " + (errorData.error || "Unknown error"));
       }
     } catch (error) {
       console.error("Error saving profile:", error);
+      alert("An error occurred while saving your profile. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -309,6 +333,103 @@ export default function ProfileSetup() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <Label className="text-base mb-3 block">Class Matching Preference</Label>
+                <p className="text-sm text-gray-600 mb-3">
+                  Choose how you want to be matched with other students based on classes
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                      classMatchingPreference === "specific"
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                    onClick={() => setClassMatchingPreference("specific")}
+                  >
+                    <div className="flex items-center space-x-2 mb-2">
+                      <input
+                        type="radio"
+                        id="specific"
+                        name="classMatching"
+                        value="specific"
+                        checked={classMatchingPreference === "specific"}
+                        onChange={() => setClassMatchingPreference("specific")}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="specific" className="font-semibold cursor-pointer">
+                        Specific Class
+                      </Label>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Match me with students taking the exact same classes
+                    </p>
+                  </div>
+                  <div
+                    className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                      classMatchingPreference === "generic"
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                    onClick={() => {
+                      setClassMatchingPreference("generic");
+                      setSelectedClassCode("");
+                    }}
+                  >
+                    <div className="flex items-center space-x-2 mb-2">
+                      <input
+                        type="radio"
+                        id="generic"
+                        name="classMatching"
+                        value="generic"
+                        checked={classMatchingPreference === "generic"}
+                        onChange={() => setClassMatchingPreference("generic")}
+                        className="w-4 h-4"
+                      />
+                      <Label htmlFor="generic" className="font-semibold cursor-pointer">
+                        Generic Class
+                      </Label>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Match me with students in similar subjects/majors
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Show class selection dropdown when specific matching is selected */}
+                {classMatchingPreference === "specific" && (
+                  <div className="mt-4 pt-4 border-t">
+                    <Label className="text-base mb-3 block">Select Class for Matching</Label>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Choose which class you want to use for matching with other students
+                    </p>
+                    {classes.filter(c => c.code && c.name).length > 0 ? (
+                      <Select
+                        value={selectedClassCode}
+                        onValueChange={setSelectedClassCode}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {classes.filter(c => c.code && c.name).map((cls, index) => (
+                            <SelectItem key={index} value={cls.code}>
+                              {cls.code} - {cls.name} {cls.semester ? `(${cls.semester})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="text-sm text-yellow-800">
+                          Please add at least one class in the previous step first.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-4">

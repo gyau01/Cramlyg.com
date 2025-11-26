@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X, Plus } from "lucide-react";
 
 interface ProfileViewProps {
@@ -123,24 +124,67 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   };
 
   const handleSaveClasses = async () => {
-    const supabase = createClient();
-    
-    // Delete all existing classes
-    await supabase.from("student_classes").delete().eq("user_id", userId);
-    
-    // Insert new classes
-    const classesToInsert = editedClasses.map(({ id, ...cls }) => ({
-      ...cls,
-      user_id: userId
-    }));
-    
-    const { error } = await supabase.from("student_classes").insert(classesToInsert);
-    
-    if (error) {
-      alert("Failed to save classes: " + error.message);
-    } else {
-      setClasses(editedClasses);
+    try {
+      const supabase = createClient();
+      
+      // Delete all existing classes
+      const { error: deleteError } = await supabase
+        .from("student_classes")
+        .delete()
+        .eq("user_id", userId);
+      
+      if (deleteError) {
+        console.error("Delete error:", deleteError);
+        alert("Failed to delete existing classes: " + deleteError.message);
+        return;
+      }
+      
+      // Insert new classes (only if there are classes to insert)
+      if (editedClasses.length > 0) {
+        // Clean the data - only include required fields and exclude id, created_at, etc.
+        const classesToInsert = editedClasses.map((cls) => ({
+          user_id: userId,
+          class_code: cls.class_code?.trim() || "",
+          class_name: cls.class_name?.trim() || "",
+          semester: cls.semester?.trim() || ""
+        })).filter(cls => cls.class_code && cls.class_name && cls.semester);
+        
+        if (classesToInsert.length === 0) {
+          alert("Please ensure all classes have a code, name, and semester.");
+          return;
+        }
+        
+        const { error: insertError, data } = await supabase
+          .from("student_classes")
+          .insert(classesToInsert)
+          .select();
+        
+        if (insertError) {
+          console.error("Insert error:", insertError);
+          alert("Failed to save classes: " + insertError.message);
+          return;
+        }
+      }
+      
+      // Reload classes from database to ensure we have the latest data
+      const { data: updatedClasses, error: selectError } = await supabase
+        .from("student_classes")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      
+      if (selectError) {
+        console.error("Select error:", selectError);
+        alert("Classes saved but failed to reload. Please refresh the page.");
+      } else {
+        setClasses(updatedClasses || []);
+      }
+      
       setEditingClasses(false);
+      setNewClass({ class_code: "", class_name: "", semester: "" });
+    } catch (error: any) {
+      console.error("Unexpected error saving classes:", error);
+      alert("An unexpected error occurred: " + (error.message || "Unknown error"));
     }
   };
 
@@ -158,24 +202,64 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   };
 
   const handleSavePreferences = async () => {
-    const supabase = createClient();
-    
-    const { error } = await supabase
-      .from("study_preferences")
-      .update({
-        study_time_preference: editedPreferences.study_time_preference,
-        study_location_preference: editedPreferences.study_location_preference,
-        group_size_preference: editedPreferences.group_size_preference,
-        study_style: editedPreferences.study_style,
+    try {
+      const supabase = createClient();
+      
+      // Validate: if specific class matching is selected, ensure a class is selected
+      if (editedPreferences.class_matching_preference === "specific" && !editedPreferences.selected_class_code) {
+        alert("Please select a class for specific class matching.");
+        return;
+      }
+      
+      // Prepare update data
+      const updateData: any = {
+        study_time_preference: editedPreferences.study_time_preference || [],
+        study_location_preference: editedPreferences.study_location_preference || [],
+        group_size_preference: editedPreferences.group_size_preference || null,
+        study_style: editedPreferences.study_style || [],
+        class_matching_preference: editedPreferences.class_matching_preference || "specific",
         updated_at: new Date().toISOString()
-      })
-      .eq("user_id", userId);
-    
-    if (error) {
-      alert("Failed to save preferences: " + error.message);
-    } else {
-      setPreferences(editedPreferences);
+      };
+      
+      // Only include selected_class_code if specific matching is selected
+      if (editedPreferences.class_matching_preference === "specific") {
+        updateData.selected_class_code = editedPreferences.selected_class_code || null;
+      } else {
+        // Clear selected_class_code for generic matching
+        updateData.selected_class_code = null;
+      }
+      
+      const { error, data } = await supabase
+        .from("study_preferences")
+        .update(updateData)
+        .eq("user_id", userId)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error("Save preferences error:", error);
+        alert("Failed to save preferences: " + error.message);
+        return;
+      }
+      
+      // Reload preferences from database
+      const { data: updatedPreferences, error: selectError } = await supabase
+        .from("study_preferences")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      
+      if (selectError) {
+        console.error("Select preferences error:", selectError);
+        alert("Preferences saved but failed to reload. Please refresh the page.");
+      } else {
+        setPreferences(updatedPreferences);
+      }
+      
       setEditingPreferences(false);
+    } catch (error: any) {
+      console.error("Unexpected error saving preferences:", error);
+      alert("An unexpected error occurred: " + (error.message || "Unknown error"));
     }
   };
 
@@ -273,7 +357,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
           <div>
             <CardTitle className="flex items-center gap-2">
               <BookOpen className="h-5 w-5 text-blue-600" />
-              Current Classes
+              Classes
             </CardTitle>
           </div>
           <Dialog open={editingClasses} onOpenChange={setEditingClasses}>
@@ -287,29 +371,34 @@ export default function ProfileView({ userId }: ProfileViewProps) {
               <DialogHeader>
                 <DialogTitle>Edit Classes</DialogTitle>
                 <DialogDescription>
-                  Add or remove classes. This will update your match recommendations.
+                  Add or remove multiple classes. You can add as many classes as needed before saving.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="space-y-3">
-                  {editedClasses.map((cls) => (
-                    <div key={cls.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-1">
-                        <div className="font-medium">{cls.class_code} - {cls.class_name}</div>
-                        <div className="text-sm text-gray-500">{cls.semester}</div>
+                {editedClasses.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-gray-700">
+                      Your Classes ({editedClasses.length})
+                    </Label>
+                    {editedClasses.map((cls) => (
+                      <div key={cls.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium">{cls.class_code} - {cls.class_name}</div>
+                          <div className="text-sm text-gray-500">{cls.semester}</div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveClass(cls.id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveClass(cls.id)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
                 
-                <div className="border-t pt-4">
+                <div className={`${editedClasses.length > 0 ? 'border-t pt-4' : ''}`}>
                   <Label className="text-base mb-3 block">Add New Class</Label>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
@@ -340,10 +429,20 @@ export default function ProfileView({ userId }: ProfileViewProps) {
                       />
                     </div>
                   </div>
-                  <Button onClick={handleAddClass} className="mt-3 w-full" variant="outline">
+                  <Button 
+                    onClick={handleAddClass} 
+                    className="mt-3 w-full" 
+                    variant="outline"
+                    disabled={!newClass.class_code || !newClass.class_name || !newClass.semester}
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Add Class
                   </Button>
+                  {editedClasses.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-2 text-center">
+                      You can add more classes before saving
+                    </p>
+                  )}
                 </div>
                 
                 <div className="flex gap-2 pt-4">
@@ -475,6 +574,100 @@ export default function ProfileView({ userId }: ProfileViewProps) {
                     </div>
                   </div>
 
+                  <div>
+                    <Label className="text-base mb-3 block">Class Matching Preference</Label>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Choose how you want to be matched with other students based on classes
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div
+                        className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                          editedPreferences.class_matching_preference === "specific"
+                            ? "border-blue-600 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        onClick={() => setEditedPreferences({ ...editedPreferences, class_matching_preference: "specific" })}
+                      >
+                        <div className="flex items-center space-x-2 mb-2">
+                          <input
+                            type="radio"
+                            id="edit-specific"
+                            name="editClassMatching"
+                            value="specific"
+                            checked={editedPreferences.class_matching_preference === "specific"}
+                            onChange={() => setEditedPreferences({ ...editedPreferences, class_matching_preference: "specific" })}
+                            className="w-4 h-4"
+                          />
+                          <Label htmlFor="edit-specific" className="font-semibold cursor-pointer">
+                            Specific Class
+                          </Label>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          Match me with students taking the exact same classes
+                        </p>
+                      </div>
+                      <div
+                        className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                          editedPreferences.class_matching_preference === "generic"
+                            ? "border-blue-600 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        onClick={() => setEditedPreferences({ ...editedPreferences, class_matching_preference: "generic", selected_class_code: null })}
+                      >
+                        <div className="flex items-center space-x-2 mb-2">
+                          <input
+                            type="radio"
+                            id="edit-generic"
+                            name="editClassMatching"
+                            value="generic"
+                            checked={editedPreferences.class_matching_preference === "generic"}
+                            onChange={() => setEditedPreferences({ ...editedPreferences, class_matching_preference: "generic", selected_class_code: null })}
+                            className="w-4 h-4"
+                          />
+                          <Label htmlFor="edit-generic" className="font-semibold cursor-pointer">
+                            Generic Class
+                          </Label>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          Match me with students in similar subjects/majors
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Show class selection dropdown when specific matching is selected */}
+                    {editedPreferences.class_matching_preference === "specific" && (
+                      <div className="mt-4 pt-4 border-t">
+                        <Label className="text-base mb-3 block">Select Class for Matching</Label>
+                        <p className="text-sm text-gray-600 mb-3">
+                          Choose which class you want to use for matching with other students
+                        </p>
+                        {classes.length > 0 ? (
+                          <Select
+                            value={editedPreferences.selected_class_code || ""}
+                            onValueChange={(value) => setEditedPreferences({ ...editedPreferences, selected_class_code: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a class" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {classes.map((cls) => (
+                                <SelectItem key={cls.id} value={cls.class_code}>
+                                  {cls.class_code} - {cls.class_name} ({cls.semester})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <p className="text-sm text-yellow-800">
+                              No classes found. Please add classes in the Classes section first.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex gap-2 pt-4">
                     <Button onClick={handleSavePreferences} className="flex-1">
                       Save Changes
@@ -528,6 +721,33 @@ export default function ProfileView({ userId }: ProfileViewProps) {
                 </Badge>
               ))}
             </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">Class Matching Preference</p>
+            <Badge className={`${
+              preferences?.class_matching_preference === "generic"
+                ? "bg-purple-100 text-purple-800 border-purple-200"
+                : "bg-indigo-100 text-indigo-800 border-indigo-200"
+            }`}>
+              {preferences?.class_matching_preference === "generic" 
+                ? "Generic Class Matching" 
+                : "Specific Class Matching"}
+            </Badge>
+            <p className="text-xs text-gray-500 mt-1">
+              {preferences?.class_matching_preference === "generic"
+                ? "Matching by similar subjects/majors"
+                : preferences?.selected_class_code 
+                  ? `Matching by class: ${preferences.selected_class_code}`
+                  : "Matching by exact same classes"}
+            </p>
+            {preferences?.class_matching_preference === "specific" && preferences?.selected_class_code && (
+              <div className="mt-2">
+                <Badge variant="outline" className="text-xs">
+                  {classes.find(c => c.class_code === preferences.selected_class_code)?.class_name || preferences.selected_class_code}
+                </Badge>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

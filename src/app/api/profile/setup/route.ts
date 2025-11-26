@@ -47,16 +47,26 @@ export async function POST(request: Request) {
     }
 
     // Insert study preferences
+    const preferencesData: any = {
+      user_id: user.id,
+      study_time_preference: preferences.studyTimes,
+      study_location_preference: preferences.studyLocations,
+      group_size_preference: preferences.groupSize,
+      study_style: preferences.studyStyles,
+      class_matching_preference: preferences.classMatchingPreference || "specific",
+      updated_at: new Date().toISOString()
+    };
+    
+    // Only include selected_class_code if specific matching is selected
+    if (preferences.classMatchingPreference === "specific" && preferences.selectedClassCode) {
+      preferencesData.selected_class_code = preferences.selectedClassCode;
+    } else {
+      preferencesData.selected_class_code = null;
+    }
+    
     const { error: preferencesError } = await supabase
       .from("study_preferences")
-      .upsert({
-        user_id: user.id,
-        study_time_preference: preferences.studyTimes,
-        study_location_preference: preferences.studyLocations,
-        group_size_preference: preferences.groupSize,
-        study_style: preferences.studyStyles,
-        updated_at: new Date().toISOString()
-      });
+      .upsert(preferencesData);
 
     if (preferencesError) throw preferencesError;
 

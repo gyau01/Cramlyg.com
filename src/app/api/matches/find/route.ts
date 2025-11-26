@@ -79,9 +79,43 @@ export async function GET(request: Request) {
 
           const theirClassCodes = theirClasses?.map(c => normalizeClassCode(c.class_code)) || [];
 
+          // Determine class matching based on user's preference
+          let classMatch = false;
+          const myClassMatchingPreference = myPreferences?.class_matching_preference || "specific";
+          const theirClassMatchingPreference = theirPreferences?.class_matching_preference || "specific";
+
+          if (myClassMatchingPreference === "generic" || theirClassMatchingPreference === "generic") {
+            // Generic matching: match by subject area (extract prefix from class codes)
+            const extractSubject = (code: string): string => {
+              const match = code.match(/^([A-Z]+)/);
+              return match ? match[1] : "";
+            };
+
+            const mySubjects = new Set(myClassCodes.map(extractSubject).filter(Boolean));
+            const theirSubjects = new Set(theirClassCodes.map(extractSubject).filter(Boolean));
+            
+            // Match if they share any subject area OR same major
+            classMatch = Array.from(mySubjects).some(subj => theirSubjects.has(subj)) || 
+                         myProfile?.major === profile.major;
+          } else {
+            // Specific matching: use selected class if available, otherwise match any class
+            if (myPreferences?.selected_class_code) {
+              // User has selected a specific class - match if the other user has that exact class
+              const normalizedSelectedClass = normalizeClassCode(myPreferences.selected_class_code);
+              classMatch = theirClassCodes.includes(normalizedSelectedClass);
+            } else if (theirPreferences?.selected_class_code) {
+              // Other user has selected a specific class - match if current user has that class
+              const normalizedSelectedClass = normalizeClassCode(theirPreferences.selected_class_code);
+              classMatch = myClassCodes.includes(normalizedSelectedClass);
+            } else {
+              // No specific class selected, match any common class
+              classMatch = myClassCodes.some(code => theirClassCodes.includes(code));
+            }
+          }
+
           // Data structure for matching criteria (same as calculate route)
           const matchCriteria = {
-            classes: myClassCodes.some(code => theirClassCodes.includes(code)),
+            classes: classMatch,
             major: myProfile?.major === profile.major,
             year: myProfile?.year_of_study === profile.year_of_study,
             studyTime: (myPreferences?.study_time_preference || []).some((time: string) =>
@@ -100,11 +134,25 @@ export async function GET(request: Request) {
           const totalFactors = Object.keys(matchCriteria).length;
           const compatibilityScore = (matchingFactors / totalFactors) * 100;
 
-          const sharedClasses = myClasses?.filter(myClass => 
-            theirClasses?.some(theirClass => 
-              normalizeClassCode(myClass.class_code) === normalizeClassCode(theirClass.class_code)
-            )
-          ).map(c => c.class_code) || [];
+          // Calculate shared classes based on matching preference
+          let sharedClasses: string[] = [];
+          if (myClassMatchingPreference === "generic" || theirClassMatchingPreference === "generic") {
+            // For generic matching, show shared subject areas
+            const extractSubject = (code: string): string => {
+              const match = normalizeClassCode(code).match(/^([A-Z]+)/);
+              return match ? match[1] : "";
+            };
+            const mySubjects = new Set(myClassCodes.map(extractSubject).filter(Boolean));
+            const theirSubjects = new Set(theirClassCodes.map(extractSubject).filter(Boolean));
+            sharedClasses = Array.from(mySubjects).filter(subj => theirSubjects.has(subj));
+          } else {
+            // For specific matching, show exact class matches
+            sharedClasses = myClasses?.filter(myClass => 
+              theirClasses?.some(theirClass => 
+                normalizeClassCode(myClass.class_code) === normalizeClassCode(theirClass.class_code)
+              )
+            ).map(c => c.class_code) || [];
+          }
 
           return {
             ...profile,
