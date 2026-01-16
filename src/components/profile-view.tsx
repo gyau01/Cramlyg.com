@@ -29,9 +29,11 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingClasses, setEditingClasses] = useState(false);
   const [editingPreferences, setEditingPreferences] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
   const [newClass, setNewClass] = useState({ class_code: "", class_name: "", semester: "" });
   const [editedClasses, setEditedClasses] = useState<any[]>([]);
   const [editedPreferences, setEditedPreferences] = useState<any>(null);
+  const [editedProfile, setEditedProfile] = useState<any>(null);
 
   // Available classes and majors from database
   const [availableClasses, setAvailableClasses] = useState<Array<{ class_code: string; class_name: string }>>([]);
@@ -166,6 +168,58 @@ export default function ProfileView({ userId }: ProfileViewProps) {
     }
 
     setUploading(false);
+  };
+
+  // Convert available majors to combobox options (memoized)
+  const majorOptions = useMemo(() => {
+    const options = availableMajors.map(major => ({
+      value: major.major_name,
+      label: major.major_name
+    }));
+    return options;
+  }, [availableMajors]);
+
+  const handleEditProfile = () => {
+    setEditedProfile({
+      major: profile?.major || "",
+      year_of_study: profile?.year_of_study || ""
+    });
+    setEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      const supabase = createClient();
+      
+      if (!editedProfile.major || !editedProfile.year_of_study) {
+        alert("Please fill in all required fields.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("student_profiles")
+        .update({
+          major: editedProfile.major,
+          year_of_study: editedProfile.year_of_study,
+          updated_at: new Date().toISOString()
+        })
+        .eq("user_id", userId);
+
+      if (error) {
+        console.error("Save profile error:", error);
+        alert("Failed to save profile: " + error.message);
+        return;
+      }
+
+      // Reload profile from database
+      await loadProfile();
+      setEditingProfile(false);
+      setEditedProfile(null);
+      alert("Profile updated successfully!");
+    } catch (error: any) {
+      console.error("Unexpected error saving profile:", error);
+      alert("An unexpected error occurred: " + (error.message || "Unknown error"));
+    }
   };
 
   const handleEditClasses = () => {
@@ -552,7 +606,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
             </CardTitle>
             <CardDescription>Your academic information and background</CardDescription>
           </div>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleEditProfile}>
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
@@ -586,6 +640,66 @@ export default function ProfileView({ userId }: ProfileViewProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Academic Profile Dialog */}
+      <Dialog open={editingProfile} onOpenChange={setEditingProfile}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Academic Profile</DialogTitle>
+            <DialogDescription>
+              Update your major and year of study information
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 pt-4">
+            <div>
+              <Label htmlFor="major" className="text-base mb-3 block">Major</Label>
+              {availableMajors.length > 0 ? (
+                <Combobox
+                  options={majorOptions}
+                  value={editedProfile?.major || ""}
+                  onValueChange={(value) => setEditedProfile({ ...editedProfile, major: value })}
+                  placeholder="Select your major..."
+                  searchPlaceholder="Search by major name..."
+                  emptyMessage="No major found."
+                />
+              ) : (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">Loading majors... Please wait.</p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="year_of_study" className="text-base mb-3 block">Year of Study</Label>
+              <Select
+                value={editedProfile?.year_of_study || ""}
+                onValueChange={(value) => setEditedProfile({ ...editedProfile, year_of_study: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select year of study" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Freshman">Freshman</SelectItem>
+                  <SelectItem value="Sophomore">Sophomore</SelectItem>
+                  <SelectItem value="Junior">Junior</SelectItem>
+                  <SelectItem value="Senior">Senior</SelectItem>
+                  <SelectItem value="Graduate">Graduate</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button onClick={handleSaveProfile} className="flex-1">
+              Save Changes
+            </Button>
+            <Button variant="outline" onClick={() => setEditingProfile(false)} className="flex-1">
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card className="shadow-lg">
         <CardHeader className="flex flex-row items-start justify-between">
