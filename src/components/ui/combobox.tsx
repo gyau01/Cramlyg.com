@@ -36,35 +36,132 @@ export function Combobox({
   const [open, setOpen] = React.useState(false);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const [popoverWidth, setPopoverWidth] = React.useState<number>(300);
+  const [search, setSearch] = React.useState("");
 
   React.useEffect(() => {
     if (triggerRef.current && open) {
       setPopoverWidth(triggerRef.current.offsetWidth);
     }
+    // Reset search when popover closes
+    if (!open) {
+      setSearch("");
+    }
   }, [open]);
+
+  // Filter options based on search - show all when search is empty
+  const filteredOptions = React.useMemo(() => {
+    if (!search || search.trim() === '') {
+      // Show all options when no search - allows scrolling and selecting
+      return options;
+    }
+    
+    // Filter when user types
+    const searchLower = search.toLowerCase().trim();
+    const normalizedSearch = searchLower.replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+    
+    return options.filter(option => {
+      const labelLower = option.label.toLowerCase();
+      const valueLower = option.value.toLowerCase();
+      const combinedText = `${labelLower} ${valueLower}`;
+      const normalizedCombined = combinedText.replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+      
+      // Extract class code from label (format: "ACC 201 - Class Name" or "ECE 420 - Signals")
+      const classCodeMatch = labelLower.match(/^([a-z]+)\s*(\d+)/i);
+      if (classCodeMatch) {
+        const classCodePrefix = classCodeMatch[1].toLowerCase();
+        const classCodeNumber = classCodeMatch[2];
+        const classCodeFull = `${classCodePrefix}${classCodeNumber}`;
+        const classCodeWithSpace = `${classCodePrefix} ${classCodeNumber}`;
+        
+        // Match class code in various formats
+        if (classCodePrefix.includes(searchLower) || searchLower.includes(classCodePrefix)) return true;
+        if (classCodeFull.includes(normalizedSearch) || normalizedSearch.includes(classCodeFull)) return true;
+        if (classCodeWithSpace.toLowerCase().includes(searchLower)) return true;
+        if (classCodeNumber.includes(searchLower)) return true;
+      }
+      
+      // Check if search matches anywhere in the label or value (case-insensitive)
+      if (labelLower.includes(searchLower) || valueLower.includes(searchLower)) return true;
+      
+      // Check normalized matching (without spaces/special chars)
+      if (normalizedCombined.includes(normalizedSearch)) return true;
+      
+      // Check if any word contains the search
+      const words = combinedText.split(/\s+/);
+      if (words.some(word => word.toLowerCase().includes(searchLower))) return true;
+      
+      // Check if search matches any part of any word
+      const allChars = combinedText.replace(/\s+/g, '');
+      if (allChars.includes(searchLower)) return true;
+      
+      return false;
+    });
+  }, [options, search]);
 
   // Find selected option with flexible matching (trim whitespace for comparison)
   const selectedOption = React.useMemo(() => {
     if (!value) return undefined;
+    
+    // Normalize function to handle whitespace and formatting differences
+    const normalize = (str: string) => {
+      return str.toLowerCase().trim().replace(/\s+/g, ' ').replace(/\s*-\s*/g, ' - ');
+    };
+    
     // Try exact match first
     let found = options.find((option) => option.value === value);
     if (found) {
-      console.log('Combobox: Found exact match', { value, found: found.label });
+      console.log('Combobox: Exact match', { value, found: found.label });
       return found;
     }
+    
     // Try trimmed match (handle whitespace differences)
     found = options.find((option) => option.value.trim() === value.trim());
     if (found) {
-      console.log('Combobox: Found trimmed match', { value, found: found.label });
+      console.log('Combobox: Trimmed match', { value, found: found.label });
       return found;
     }
-    // Try case-insensitive match
+    
+    // Try normalized match (handles class format like "ECE 420 - Signals")
+    const normalizedValue = normalize(value);
+    found = options.find((option) => normalize(option.value) === normalizedValue);
+    if (found) {
+      console.log('Combobox: Normalized match', { value, normalizedValue, found: found.label });
+      return found;
+    }
+    
+    // Try matching by parsing class code and name separately (for class format "CODE - Name")
+    const valueMatch = value.match(/^(.+?)\s*-\s*(.+)$/);
+    if (valueMatch) {
+      const valueCode = valueMatch[1].trim();
+      const valueName = valueMatch[2].trim();
+      found = options.find((option) => {
+        const optMatch = option.value.match(/^(.+?)\s*-\s*(.+)$/);
+        if (optMatch) {
+          const optCode = optMatch[1].trim();
+          const optName = optMatch[2].trim();
+          return optCode === valueCode && optName === valueName;
+        }
+        return false;
+      });
+      if (found) {
+        console.log('Combobox: Parsed match', { value, valueCode, valueName, found: found.label });
+        return found;
+      }
+    }
+    
+    // Last resort: case-insensitive match
     found = options.find((option) => option.value.toLowerCase().trim() === value.toLowerCase().trim());
     if (found) {
-      console.log('Combobox: Found case-insensitive match', { value, found: found.label });
+      console.log('Combobox: Case-insensitive match', { value, found: found.label });
     } else {
-      console.log('Combobox: No match found', { value, availableOptions: options.map(o => o.value) });
+      console.warn('Combobox: No match found', { 
+        value, 
+        valueLength: value.length,
+        optionsCount: options.length,
+        sampleOptions: options.slice(0, 3).map(o => o.value)
+      });
     }
+    
     return found;
   }, [options, value]);
   
@@ -112,99 +209,25 @@ export function Combobox({
         sideOffset={4}
         style={{ width: `${popoverWidth}px`, minWidth: "200px" }}
       >
-        <Command 
-          shouldFilter={true}
-          filter={(value, search) => {
-            if (!search) return 1;
-            const searchLower = search.toLowerCase().trim();
-            const valueLower = value.toLowerCase();
-            
-            // Find the option by label (value is the label in cmdk)
-            const option = options.find(opt => opt.label === value);
-            if (!option) return 0;
-            
-            // Search in both label and value
-            const labelLower = option.label.toLowerCase();
-            const optionValueLower = option.value.toLowerCase();
-            const combinedText = `${labelLower} ${optionValueLower}`;
-            
-            // Extract class code from label (format: "ACC 201 - Class Name" or "ACC 201|Class Name")
-            // Try to get the class code part (before dash or pipe, first word or two)
-            const classCodeMatch = labelLower.match(/^([a-z]+\s*\d+)/i);
-            const classCode = classCodeMatch ? classCodeMatch[1].toLowerCase().replace(/\s+/g, '') : '';
-            const classCodeWithSpaces = classCodeMatch ? classCodeMatch[1].toLowerCase() : '';
-            
-            // Prioritize class code matches
-            // Check if search matches the class code exactly or starts with it
-            if (classCode && (classCode.startsWith(searchLower) || classCode.includes(searchLower))) {
-              return 1;
-            }
-            if (classCodeWithSpaces && (classCodeWithSpaces.startsWith(searchLower) || classCodeWithSpaces.includes(searchLower))) {
-              return 1;
-            }
-            
-            // Check if search matches the beginning of label or value
-            if (labelLower.startsWith(searchLower) || optionValueLower.startsWith(searchLower)) return 1;
-            
-            // Check if search matches anywhere in the combined text
-            if (combinedText.includes(searchLower)) return 1;
-            
-            // Check if any word starts with the search
-            const words = combinedText.split(/\s+/);
-            if (words.some(word => word.startsWith(searchLower))) return 1;
-            
-            // For class codes, also check if search matches the beginning of any word (for codes like "ACC201")
-            const allWordsNoSpaces = combinedText.replace(/\s+/g, ' ');
-            if (allWordsNoSpaces.includes(searchLower)) return 1;
-            
-            return 0;
-          }}
-        >
-          <CommandInput placeholder={searchPlaceholder} />
-          <CommandList>
+        <Command shouldFilter={false} className="flex flex-col">
+          <CommandList className="max-h-[400px] min-h-[200px] overflow-y-auto border-b">
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
-              {options.map((option) => {
-                // Build keywords array with partial matches for better search
-                const labelLower = option.label.toLowerCase();
-                const valueLower = option.value.toLowerCase();
-                const allWords = `${option.label} ${option.value}`.toLowerCase().split(/\s+/);
-                
-                // Extract class code for classes (format: "ACC 201" or "ACCT 301")
-                // Try to extract the code part (letters + numbers)
-                const classCodeMatch = labelLower.match(/^([a-z]+)\s*(\d+)/i);
-                let classCodePrefix = '';
-                let classCodeFull = '';
-                if (classCodeMatch) {
-                  classCodePrefix = classCodeMatch[1].toLowerCase(); // "acc" or "acct"
-                  classCodeFull = `${classCodeMatch[1].toLowerCase()}${classCodeMatch[2]}`; // "acc201"
-                }
-                
-                const keywords: string[] = [labelLower, valueLower];
-                
-                // Add class code keywords if this looks like a class
-                if (classCodePrefix) {
-                  keywords.push(classCodePrefix);
-                  if (classCodePrefix.length >= 3) keywords.push(classCodePrefix.substring(0, 3));
-                  if (classCodePrefix.length >= 4) keywords.push(classCodePrefix.substring(0, 4));
-                  if (classCodeFull) keywords.push(classCodeFull);
-                }
-                
-                // Add partial word matches
-                allWords.forEach(word => {
-                  if (word.length >= 3) keywords.push(word.substring(0, 3));
-                  if (word.length >= 4) keywords.push(word.substring(0, 4));
-                  if (word.length >= 5) keywords.push(word.substring(0, 5));
-                });
-                
+              {filteredOptions.map((option) => {
                 return (
                   <CommandItem
                     key={option.value}
                     value={option.label}
-                    keywords={keywords}
-                    onSelect={(currentValue) => {
-                      // cmdk's onSelect receives the value prop (label)
-                      // Always use option.value from closure to ensure correct value
+                    className="text-black aria-selected:text-black cursor-pointer pointer-events-auto"
+                    style={{ pointerEvents: 'auto' }}
+                    onSelect={() => {
+                      // Use option.value from closure - this is the most reliable
+                      onValueChange(option.value);
+                      setOpen(false);
+                    }}
+                    onClick={(e) => {
+                      // Backup click handler
+                      e.stopPropagation();
                       onValueChange(option.value);
                       setOpen(false);
                     }}
@@ -215,12 +238,19 @@ export function Combobox({
                         value === option.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    {option.label}
+                    <span className="text-black">{option.label}</span>
                   </CommandItem>
                 );
               })}
             </CommandGroup>
           </CommandList>
+          <div className="border-t flex-shrink-0">
+            <CommandInput 
+              placeholder={searchPlaceholder}
+              value={search}
+              onValueChange={setSearch}
+            />
+          </div>
         </Command>
       </PopoverContent>
     </Popover>

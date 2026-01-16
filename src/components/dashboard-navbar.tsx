@@ -11,7 +11,18 @@ export default function DashboardNavbar() {
           <GraduationCap className="h-6 w-6" />
           <span>Cramlyg</span>
         </Link>
-        <div className="flex gap-4 items-center">
+        <div className="flex gap-4 items-center absolute left-1/2 transform -translate-x-1/2">
+          <Link href="/pricing">
+            <Button variant="ghost">Pricing</Button>
+          </Link>
+          <Link href="/community">
+            <Button variant="ghost">Community</Button>
+          </Link>
+          <Link href="/solutions">
+            <Button variant="ghost">Solutions</Button>
+          </Link>
+        </div>
+        <div className="flex gap-4 items-center ml-auto">
           <Link href="/dashboard">
             <Button variant="ghost">Dashboard</Button>
           </Link>

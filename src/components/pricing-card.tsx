@@ -2,13 +2,7 @@
 
 import { User } from "@supabase/supabase-js";
 import { Button } from "./ui/button";
-import {
-    Card,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle
-} from "./ui/card";
+import { Check, ArrowRight } from "lucide-react";
 import { supabase } from "../../supabase/supabase";
 
 export default function PricingCard({ item, user }: {
@@ -19,10 +13,9 @@ export default function PricingCard({ item, user }: {
     const handleCheckout = async (priceId: string) => {
         if (!user) {
             // Redirect to login if user is not authenticated
-            window.location.href = "/login?redirect=pricing";
+            window.location.href = "/sign-in?redirect=pricing";
             return;
         }
-
 
         try {
             const { data, error } = await supabase.functions.invoke('supabase-functions-create-checkout', {
@@ -51,33 +44,147 @@ export default function PricingCard({ item, user }: {
         }
     };
 
+    // Determine plan details based on item
+    const getPlanDetails = () => {
+        const price = item?.amount ? item.amount / 100 : 0;
+        const name = item.name?.toLowerCase() || '';
+        
+        if (price === 0) {
+            // Free plan
+            return {
+                badge: 'STARTER',
+                badgeColor: 'bg-blue-600/20 text-blue-300 border-blue-400/30',
+                title: 'Free',
+                description: 'Perfect for exploring what Cramlyg can do',
+                features: [
+                    'Unlimited study matching',
+                    'Basic study preferences',
+                    'Find study partners',
+                    'Messaging with matches'
+                ]
+            };
+        } else if (price === 1.99 || price === 199 || name.includes('basic')) {
+            // Basic plan ($1.99)
+            return {
+                badge: 'BASIC',
+                badgeColor: 'bg-blue-600/20 text-blue-300 border-blue-400/30',
+                title: 'Basic',
+                description: 'Great for regular students',
+                features: [
+                    'All free features',
+                    'Priority matching',
+                    'Advanced study preferences',
+                    'Study group creation'
+                ]
+            };
+        } else if (price === 4.99 || price === 499 || name.includes('pro') || name.includes('premium')) {
+            // Pro plan ($4.99)
+            return {
+                badge: 'PRO',
+                badgeColor: 'bg-blue-500/30 text-blue-200 border-blue-400/50',
+                title: 'Pro',
+                description: 'Advanced features for power users',
+                features: [
+                    'All basic features',
+                    'Unlimited priority matching',
+                    'Advanced study analytics',
+                    'Priority support',
+                    'Study session scheduling'
+                ]
+            };
+        } else {
+            return {
+                badge: item.name?.toUpperCase() || 'PLAN',
+                badgeColor: 'bg-blue-600/20 text-blue-300 border-blue-400/30',
+                title: item.name || 'Plan',
+                description: item.description || 'Choose the perfect plan for your needs',
+                features: item.features || [
+                    'Study matching',
+                    'Find study partners',
+                    'Basic features'
+                ]
+            };
+        }
+    };
+
+    const planDetails = getPlanDetails();
+    const price = item?.amount ? (item.amount < 100 ? item.amount : item.amount / 100) : 0;
+    const interval = item?.interval || (price === 0 ? 'forever' : 'month');
+    const isPopular = item.popular || false;
+    const isFree = price === 0;
+
     return (
-        <Card className={`w-[350px] relative overflow-hidden ${item.popular ? 'border-2 border-blue-500 shadow-xl scale-105' : 'border border-gray-200'}`}>
-            {item.popular && (
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-purple-50 opacity-30" />
-            )}
-            <CardHeader className="relative">
-                {item.popular && (
-                    <div className="px-4 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-full w-fit mb-4">
-                        Most Popular
+        <div className={`relative rounded-2xl overflow-hidden ${
+            isPopular 
+                ? 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 border-2 border-blue-400 shadow-2xl scale-105 z-10' 
+                : 'bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-900 border border-blue-600/50 shadow-xl'
+        }`}>
+            {/* Grid pattern background */}
+            <div className="absolute inset-0 bg-grid-white/5 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))]"></div>
+            
+            {/* Content */}
+            <div className="relative p-8 text-white">
+                {/* Badge */}
+                <div className="mb-6">
+                    {isPopular && (
+                        <div className="inline-flex items-center px-4 py-1.5 text-xs font-semibold text-white bg-blue-500/30 border border-blue-400/50 rounded-full mb-4">
+                            POPULAR
+                        </div>
+                    )}
+                    <div className={`inline-flex items-center px-4 py-1.5 text-xs font-semibold rounded-full border ${planDetails.badgeColor}`}>
+                        {planDetails.badge}
                     </div>
-                )}
-                <CardTitle className="text-2xl font-bold tracking-tight text-gray-900">{item.name}</CardTitle>
-                <CardDescription className="flex items-baseline gap-2 mt-2">
-                    <span className="text-4xl font-bold text-gray-900">${item?.amount / 100}</span>
-                    <span className="text-gray-600">/{item?.interval}</span>
-                </CardDescription>
-            </CardHeader>
-            <CardFooter className="relative">
+                </div>
+
+                {/* Title */}
+                <h3 className="text-4xl font-bold mb-3">{planDetails.title}</h3>
+
+                {/* Price */}
+                <div className="mb-4">
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-6xl font-extrabold">{isFree ? '$0' : `$${price}`}</span>
+                        <span className="text-xl text-blue-200">
+                            /{isFree ? 'forever' : interval}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Description */}
+                <p className="text-blue-100 mb-6 text-lg">
+                    {planDetails.description}
+                </p>
+
+                {/* Features */}
+                <ul className="space-y-4 mb-8">
+                    {planDetails.features.map((feature: string, index: number) => (
+                        <li key={index} className="flex items-start gap-3">
+                            <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <Check className="h-3.5 w-3.5 text-white" />
+                            </div>
+                            <span className="text-blue-50">{feature}</span>
+                        </li>
+                    ))}
+                </ul>
+
+                {/* CTA Button */}
                 <Button
                     onClick={async () => {
-                        await handleCheckout(item.id)
+                        if (!isFree) {
+                            await handleCheckout(item.id);
+                        } else {
+                            window.location.href = user ? "/dashboard" : "/sign-up";
+                        }
                     }}
-                    className={`w-full py-6 text-lg font-medium`}
+                    className={`w-full py-6 text-lg font-bold rounded-xl transition-all ${
+                        isPopular
+                            ? 'bg-white text-blue-600 hover:bg-blue-50 hover:scale-105 shadow-xl'
+                            : 'bg-blue-500 hover:bg-blue-400 text-white shadow-lg hover:shadow-xl'
+                    }`}
                 >
-                    Get Started
+                    {isFree ? 'Get Started Free' : `Start ${planDetails.title} Trial`}
+                    {!isFree && <ArrowRight className="ml-2 h-5 w-5" />}
                 </Button>
-            </CardFooter>
-        </Card>
-    )
+            </div>
+        </div>
+    );
 }

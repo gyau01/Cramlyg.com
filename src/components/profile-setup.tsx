@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +28,8 @@ export default function ProfileSetup() {
   const [gpa, setGpa] = useState("");
   const [bio, setBio] = useState("");
 
-  // Classes State
-  const [classes, setClasses] = useState<Array<{ code: string; name: string; semester: string }>>([
+  // Classes State - store full class value to avoid reconstruction issues
+  const [classes, setClasses] = useState<Array<{ code: string; name: string; semester: string; fullValue?: string }>>([
     { code: "", name: "", semester: "" }
   ]);
 
@@ -44,6 +44,10 @@ export default function ProfileSetup() {
   // Available classes from database
   const [availableClasses, setAvailableClasses] = useState<Array<{ class_code: string; class_name: string }>>([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
+
+  // Available majors from database
+  const [availableMajors, setAvailableMajors] = useState<Array<{ major_name: string; major_code: string }>>([]);
+  const [loadingMajors, setLoadingMajors] = useState(false);
 
   // Fetch classes from database
   useEffect(() => {
@@ -64,28 +68,62 @@ export default function ProfileSetup() {
     fetchClasses();
   }, []);
 
+  // Fetch majors from database
+  useEffect(() => {
+    const fetchMajors = async () => {
+      setLoadingMajors(true);
+      try {
+        const response = await fetch("/api/majors/list");
+        if (!response.ok) {
+          console.error("Failed to fetch majors:", response.status, response.statusText);
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Error details:", errorData);
+          return;
+        }
+        const data = await response.json();
+        console.log("Majors data received:", data);
+        if (data.majors && Array.isArray(data.majors)) {
+          setAvailableMajors(data.majors);
+          console.log("Available majors set:", data.majors.length, "majors");
+        } else {
+          console.warn("No majors in response or invalid format:", data);
+        }
+      } catch (error) {
+        console.error("Error fetching majors:", error);
+      } finally {
+        setLoadingMajors(false);
+      }
+    };
+    fetchMajors();
+  }, []);
+
   // University options (only University of Louisville for now)
   const universityOptions = [
     { value: "University of Louisville", label: "University of Louisville" }
   ];
 
-  // Major options (only Accountancy for now)
-  const majorOptions = [
-    { value: "Accountancy", label: "Accountancy" }
-  ];
+  // Convert available majors to combobox options
+  const majorOptions = useMemo(() => {
+    return availableMajors.map(m => ({
+      value: m.major_name,
+      label: m.major_name
+    }));
+  }, [availableMajors]);
 
-  // Convert available classes to combobox options
+  // Convert available classes to combobox options (memoized for performance)
   // Use the same format as university/major - label and value should match for consistency
-  const classOptions = availableClasses.map(cls => {
-    const classLabel = `${cls.class_code} - ${cls.class_name}`;
-    return {
-      value: classLabel,  // Use label as value, same as university/major
-      label: classLabel
-    };
-  });
+  const classOptions = useMemo(() => {
+    return availableClasses.map(cls => {
+      const classLabel = `${cls.class_code} - ${cls.class_name}`;
+      return {
+        value: classLabel,  // Use label as value, same as university/major
+        label: classLabel
+      };
+    });
+  }, [availableClasses]);
 
   const addClass = () => {
-    setClasses([...classes, { code: "", name: "", semester: "" }]);
+    setClasses([...classes, { code: "", name: "", semester: "", fullValue: "" }]);
   };
 
   const removeClass = (index: number) => {
@@ -101,9 +139,9 @@ export default function ProfileSetup() {
   // Helper function to construct class value in the same format as options
   const constructClassValue = (code: string, name: string): string => {
     if (!code || !name) return "";
-    const constructed = `${code} - ${name}`;
-    // Debug: log to verify value construction
-    console.log('Constructing class value:', { code, name, constructed });
+    // Ensure exact format match: "CODE - Name" with single spaces
+    const constructed = `${code.trim()} - ${name.trim()}`;
+    console.log('constructClassValue:', { code, name, constructed });
     return constructed;
   };
 
@@ -126,11 +164,20 @@ export default function ProfileSetup() {
     if (selectedValue) {
       const code = parseClassCode(selectedValue);
       const name = parseClassName(selectedValue);
-      updateClass(index, "code", code);
-      updateClass(index, "name", name);
+      const updated = [...classes];
+      updated[index] = { 
+        ...updated[index], 
+        code, 
+        name,
+        fullValue: selectedValue // Store the full value to ensure exact match
+      };
+      setClasses(updated);
     } else {
       updateClass(index, "code", "");
       updateClass(index, "name", "");
+      const updated = [...classes];
+      updated[index] = { ...updated[index], fullValue: "" };
+      setClasses(updated);
     }
   };
 
@@ -295,7 +342,7 @@ export default function ProfileSetup() {
                       <Label>Class</Label>
                       <Combobox
                         options={classOptions}
-                        value={constructClassValue(cls.code, cls.name)}
+                        value={cls.fullValue || constructClassValue(cls.code, cls.name)}
                         onValueChange={(value) => handleClassSelection(index, value)}
                         placeholder="Search and select class..."
                         searchPlaceholder="Search by code or name..."
