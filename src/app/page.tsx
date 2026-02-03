@@ -1,6 +1,7 @@
 import Hero from "@/components/hero";
 import Navbar from "@/components/navbar";
 import Footer from "@/components/footer";
+import WaitlistSection from "@/components/waitlist-section";
 import { createClient } from "../../supabase/server";
 import { ArrowUpRight, Users, MessageSquare, Target, Shield } from 'lucide-react';
 
@@ -20,7 +21,7 @@ export default async function Home() {
             Find Your Perfect <span className="bg-gradient-to-r from-blue-300 to-cyan-300 bg-clip-text text-transparent">Study Buddy</span>
           </h1>
           <p className="text-xl md:text-2xl text-blue-100 mb-10 max-w-2xl mx-auto font-light">
-            Connect with compatible study partners based on your classes, academic goals, and study preferences
+            Connect with compatible study partners in three simple steps to improve your grades!
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <a href={user ? "/dashboard" : "/sign-up"} className="group relative px-8 py-4 bg-white text-blue-600 rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-xl hover:shadow-2xl">
@@ -34,6 +35,9 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* Waitlist Section */}
+      <WaitlistSection />
+
       {/* Platform Preview Section */}
       <section className="py-20 px-4 bg-white">
         <div className="container mx-auto">
@@ -41,33 +45,59 @@ export default async function Home() {
             {/* Left: Text Content */}
             <div>
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-                Crystal clear guides.
+                Step 1: Create Profile
               </h2>
               <p className="text-lg text-gray-600">
-                Step-by-step explanations make complex topics easy for all skill levels.
+                Students add their university, major, enrolled classes, GPA, and study preferences (time, location, group size, study style).
               </p>
             </div>
             {/* Right: Image Placeholder */}
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg aspect-square flex items-center justify-center min-h-[300px] border border-blue-100">
-              <div className="w-32 h-32 bg-white rounded-lg shadow-sm"></div>
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg aspect-square flex items-center justify-center min-h-[300px] border border-blue-100 overflow-hidden">
+              <img 
+                src="/profile1.png" 
+                alt="Student Profile Example" 
+                className="w-full h-full object-contain"
+              />
             </div>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            {/* Left: Image Placeholder */}
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg aspect-square flex items-center justify-center min-h-[300px] border border-blue-100">
-              <div className="w-32 h-32 bg-white rounded-full shadow-sm"></div>
+          <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
+            {/* Left: Profile Images */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-8 min-h-[800px] border border-blue-100">
+              <div className="grid grid-cols-1 gap-6 h-full">
+                <div className="bg-white rounded-xl overflow-hidden shadow-md">
+                  <img 
+                    src="/profile2.png" 
+                    alt="Student Profile Example 2" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="bg-white rounded-xl overflow-hidden shadow-md">
+                  <img 
+                    src="/profile3.png" 
+                    alt="Student Profile Example 3" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
             </div>
             {/* Right: Text Content */}
             <div>
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-                Modern tech visuals.
+                Step 2: Smart Matching
+              </h2>
+              <p className="text-lg text-gray-600 mb-32">
+                Our algorithm analyzes compatibility based on shared classes, similar study preferences, availability overlap, and academic goals to find your perfect study partners.
+              </p>
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                Step 3: Connect & Study
               </h2>
               <p className="text-lg text-gray-600">
-                Friendly graphics and diagrams bring information to life.
+                Once matched, you can message your study partners, schedule group sessions, share resources, and form study groups of up to 20 members.
               </p>
             </div>
           </div>
+
         </div>
       </section>
 

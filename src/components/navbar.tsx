@@ -1,8 +1,8 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '../../supabase/server'
 import { Button } from './ui/button'
 import UserProfile from './user-profile'
-import { GraduationCap } from 'lucide-react'
 
 export default async function Navbar() {
   const supabase = createClient()
@@ -13,9 +13,15 @@ export default async function Navbar() {
   return (
     <nav className="w-full border-b border-gray-200 bg-white py-3 shadow-sm">
       <div className="container mx-auto px-4 flex justify-between items-center">
-        <Link href="/" prefetch className="flex items-center gap-2 text-xl font-bold text-blue-600">
-          <GraduationCap className="h-6 w-6" />
-          <span>Cramlyg</span>
+        <Link href="/" prefetch className="flex items-center gap-2">
+          <Image 
+            src="/cramlylogo.png" 
+            alt="Cramlyg Logo" 
+            width={240} 
+            height={80}
+            className="h-16 w-auto"
+            priority
+          />
         </Link>
         <div className="flex gap-4 items-center absolute left-1/2 transform -translate-x-1/2">
           <Link href="/pricing">
