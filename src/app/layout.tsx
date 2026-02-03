@@ -7,7 +7,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "StudyBuddy - Find Your Perfect Study Partner",
+  title: "Cramly",
   description: "Connect with compatible study partners based on your classes and preferences",
 };
 
