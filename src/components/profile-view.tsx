@@ -61,7 +61,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
         console.log("Available classes set:", data.classes.length, "classes");
         // Log a few sample classes to verify they're loaded
         if (data.classes.length > 0) {
-          console.log("Sample classes loaded:", data.classes.slice(0, 10).map(c => `${c.class_code} - ${c.class_name}`));
+          console.log("Sample classes loaded:", data.classes.map((c: any) => ...))
         }
       } else {
         console.warn("No classes in response or invalid format:", data);
