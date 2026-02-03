@@ -9,8 +9,8 @@ export default function DashboardNavbar() {
       <div className="container mx-auto px-4 flex justify-between items-center">
         <Link href="/" className="flex items-center gap-2">
           <Image 
-            src="/cramlylogo.png" 
-            alt="Cramlyg Logo" 
+            src="/logo.png" 
+            alt="Cramly Logo" 
             width={240} 
             height={80}
             className="h-16 w-auto"
