@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Combobox } from "@/components/ui/combobox";
 import { Plus, X } from "lucide-react";
 
 interface ProfileSetupProps {
@@ -27,8 +28,8 @@ export default function ProfileSetup() {
   const [gpa, setGpa] = useState("");
   const [bio, setBio] = useState("");
 
-  // Classes State
-  const [classes, setClasses] = useState<Array<{ code: string; name: string; semester: string }>>([
+  // Classes State - store full class value to avoid reconstruction issues
+  const [classes, setClasses] = useState<Array<{ code: string; name: string; semester: string; fullValue?: string }>>([
     { code: "", name: "", semester: "" }
   ]);
 
@@ -40,8 +41,89 @@ export default function ProfileSetup() {
   const [classMatchingPreference, setClassMatchingPreference] = useState<string>("specific");
   const [selectedClassCode, setSelectedClassCode] = useState<string>("");
 
+  // Available classes from database
+  const [availableClasses, setAvailableClasses] = useState<Array<{ class_code: string; class_name: string }>>([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+
+  // Available majors from database
+  const [availableMajors, setAvailableMajors] = useState<Array<{ major_name: string; major_code: string }>>([]);
+  const [loadingMajors, setLoadingMajors] = useState(false);
+
+  // Fetch classes from database
+  useEffect(() => {
+    const fetchClasses = async () => {
+      setLoadingClasses(true);
+      try {
+        const response = await fetch("/api/classes/list?university_id=1000");
+        const data = await response.json();
+        if (data.classes) {
+          setAvailableClasses(data.classes);
+        }
+      } catch (error) {
+        console.error("Error fetching classes:", error);
+      } finally {
+        setLoadingClasses(false);
+      }
+    };
+    fetchClasses();
+  }, []);
+
+  // Fetch majors from database
+  useEffect(() => {
+    const fetchMajors = async () => {
+      setLoadingMajors(true);
+      try {
+        const response = await fetch("/api/majors/list");
+        if (!response.ok) {
+          console.error("Failed to fetch majors:", response.status, response.statusText);
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Error details:", errorData);
+          return;
+        }
+        const data = await response.json();
+        console.log("Majors data received:", data);
+        if (data.majors && Array.isArray(data.majors)) {
+          setAvailableMajors(data.majors);
+          console.log("Available majors set:", data.majors.length, "majors");
+        } else {
+          console.warn("No majors in response or invalid format:", data);
+        }
+      } catch (error) {
+        console.error("Error fetching majors:", error);
+      } finally {
+        setLoadingMajors(false);
+      }
+    };
+    fetchMajors();
+  }, []);
+
+  // University options (only University of Louisville for now)
+  const universityOptions = [
+    { value: "University of Louisville", label: "University of Louisville" }
+  ];
+
+  // Convert available majors to combobox options
+  const majorOptions = useMemo(() => {
+    return availableMajors.map(m => ({
+      value: m.major_name,
+      label: m.major_name
+    }));
+  }, [availableMajors]);
+
+  // Convert available classes to combobox options (memoized for performance)
+  // Use the same format as university/major - label and value should match for consistency
+  const classOptions = useMemo(() => {
+    return availableClasses.map(cls => {
+      const classLabel = `${cls.class_code} - ${cls.class_name}`;
+      return {
+        value: classLabel,  // Use label as value, same as university/major
+        label: classLabel
+      };
+    });
+  }, [availableClasses]);
+
   const addClass = () => {
-    setClasses([...classes, { code: "", name: "", semester: "" }]);
+    setClasses([...classes, { code: "", name: "", semester: "", fullValue: "" }]);
   };
 
   const removeClass = (index: number) => {
@@ -52,6 +134,51 @@ export default function ProfileSetup() {
     const updated = [...classes];
     updated[index] = { ...updated[index], [field]: value };
     setClasses(updated);
+  };
+
+  // Helper function to construct class value in the same format as options
+  const constructClassValue = (code: string, name: string): string => {
+    if (!code || !name) return "";
+    // Ensure exact format match: "CODE - Name" with single spaces
+    const constructed = `${code.trim()} - ${name.trim()}`;
+    console.log('constructClassValue:', { code, name, constructed });
+    return constructed;
+  };
+
+  // Helper function to parse class code from the selected value
+  const parseClassCode = (classValue: string): string => {
+    if (!classValue) return "";
+    const match = classValue.match(/^(.+?)\s*-\s*/);
+    return match ? match[1].trim() : "";
+  };
+
+  // Helper function to parse class name from the selected value
+  const parseClassName = (classValue: string): string => {
+    if (!classValue) return "";
+    const match = classValue.match(/^.+?\s*-\s*(.+)$/);
+    return match ? match[1].trim() : "";
+  };
+
+  // Handler for class selection - extracts code and name from the selected value
+  const handleClassSelection = (index: number, selectedValue: string) => {
+    if (selectedValue) {
+      const code = parseClassCode(selectedValue);
+      const name = parseClassName(selectedValue);
+      const updated = [...classes];
+      updated[index] = { 
+        ...updated[index], 
+        code, 
+        name,
+        fullValue: selectedValue // Store the full value to ensure exact match
+      };
+      setClasses(updated);
+    } else {
+      updateClass(index, "code", "");
+      updateClass(index, "name", "");
+      const updated = [...classes];
+      updated[index] = { ...updated[index], fullValue: "" };
+      setClasses(updated);
+    }
   };
 
   const togglePreference = (value: string, state: string[], setState: (val: string[]) => void) => {
@@ -134,20 +261,24 @@ export default function ProfileSetup() {
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="university">University</Label>
-                <Input
-                  id="university"
+                <Combobox
+                  options={universityOptions}
                   value={university}
-                  onChange={(e) => setUniversity(e.target.value)}
-                  placeholder="e.g., Stanford University"
+                  onValueChange={setUniversity}
+                  placeholder="Select university..."
+                  searchPlaceholder="Search university..."
+                  emptyMessage="No university found."
                 />
               </div>
               <div>
                 <Label htmlFor="major">Major</Label>
-                <Input
-                  id="major"
+                <Combobox
+                  options={majorOptions}
                   value={major}
-                  onChange={(e) => setMajor(e.target.value)}
-                  placeholder="e.g., Computer Science"
+                  onValueChange={setMajor}
+                  placeholder="Select major..."
+                  searchPlaceholder="Search major..."
+                  emptyMessage="No major found."
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -207,29 +338,25 @@ export default function ProfileSetup() {
               {classes.map((cls, index) => (
                 <div key={index} className="flex gap-2 items-end">
                   <div className="flex-1 space-y-2">
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <Label>Code</Label>
-                        <Input
-                          value={cls.code}
-                          onChange={(e) => updateClass(index, "code", e.target.value)}
-                          placeholder="CS101"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <Label>Name</Label>
-                        <Input
-                          value={cls.name}
-                          onChange={(e) => updateClass(index, "name", e.target.value)}
-                          placeholder="Introduction to Programming"
-                        />
-                      </div>
+                    <div>
+                      <Label>Class</Label>
+                      <Combobox
+                        options={classOptions}
+                        value={cls.fullValue || constructClassValue(cls.code, cls.name)}
+                        onValueChange={(value) => handleClassSelection(index, value)}
+                        placeholder="Search and select class..."
+                        searchPlaceholder="Search by code or name..."
+                        emptyMessage="No class found."
+                      />
                     </div>
-                    <Input
-                      value={cls.semester}
-                      onChange={(e) => updateClass(index, "semester", e.target.value)}
-                      placeholder="Fall 2024"
-                    />
+                    <div>
+                      <Label>Semester</Label>
+                      <Input
+                        value={cls.semester}
+                        onChange={(e) => updateClass(index, "semester", e.target.value)}
+                        placeholder="Fall 2024"
+                      />
+                    </div>
                   </div>
                   {classes.length > 1 && (
                     <Button
@@ -406,21 +533,24 @@ export default function ProfileSetup() {
                       Choose which class you want to use for matching with other students
                     </p>
                     {classes.filter(c => c.code && c.name).length > 0 ? (
-                      <Select
-                        value={selectedClassCode}
-                        onValueChange={setSelectedClassCode}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a class" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {classes.filter(c => c.code && c.name).map((cls, index) => (
-                            <SelectItem key={index} value={cls.code}>
-                              {cls.code} - {cls.name} {cls.semester ? `(${cls.semester})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Combobox
+                        options={classes.filter(c => c.code && c.name).map(cls => {
+                          const classLabel = `${cls.code} - ${cls.name}${cls.semester ? ` (${cls.semester})` : ""}`;
+                          return {
+                            value: classLabel,  // Use label as value, same as other fields
+                            label: classLabel
+                          };
+                        })}
+                        value={selectedClassCode ? classes.find(c => c.code === selectedClassCode) ? `${classes.find(c => c.code === selectedClassCode)!.code} - ${classes.find(c => c.code === selectedClassCode)!.name}${classes.find(c => c.code === selectedClassCode)!.semester ? ` (${classes.find(c => c.code === selectedClassCode)!.semester})` : ""}` : "" : ""}
+                        onValueChange={(value) => {
+                          // Use helper function to extract class code
+                          const code = parseClassCode(value);
+                          setSelectedClassCode(code);
+                        }}
+                        placeholder="Select a class..."
+                        searchPlaceholder="Search by code or name..."
+                        emptyMessage="No class found."
+                      />
                     ) : (
                       <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                         <p className="text-sm text-yellow-800">

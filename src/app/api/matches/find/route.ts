@@ -45,26 +45,20 @@ export async function GET(request: Request) {
       .eq("profile_completed", true)
       .neq("user_id", userId);
 
-    // Get existing requests and matches to filter out
-    const { data: existingRequests } = await supabase
-      .from("match_requests")
-      .select("receiver_id, sender_id")
-      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
-
+    // Get existing matches to filter out
     const { data: existingMatches } = await supabase
       .from("matches")
       .select("user1_id, user2_id")
       .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
 
     const excludedIds = new Set([
-      ...existingRequests?.map(r => r.sender_id === userId ? r.receiver_id : r.sender_id) || [],
       ...existingMatches?.map(m => m.user1_id === userId ? m.user2_id : m.user1_id) || []
     ]);
 
     // Calculate compatibility scores using 6-factor system
     const matches = await Promise.all(
-      otherProfiles
-        ?.filter(profile => !excludedIds.has(profile.user_id))
+      (otherProfiles || [])
+        .filter(profile => !excludedIds.has(profile.user_id))
         .map(async (profile) => {
           const { data: theirClasses } = await supabase
             .from("student_classes")

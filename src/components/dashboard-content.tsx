@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, MessageCircle, UserCircle } from "lucide-react";
+import { Users, MessageCircle, UserCircle, BarChart3 } from "lucide-react";
 import MatchesView from "./matches-view";
 import ChatView from "./chat-view";
 import ProfileView from "./profile-view";
+import PollsView from "./polls-view";
 
 interface DashboardContentProps {
   userId: string;
@@ -32,7 +33,7 @@ export default function DashboardContent({ userId }: DashboardContentProps) {
   return (
     <div className="container mx-auto px-4 py-8">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-8">
+        <TabsList className="grid w-full grid-cols-4 mb-8">
           <TabsTrigger value="matches" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Matches
@@ -40,6 +41,10 @@ export default function DashboardContent({ userId }: DashboardContentProps) {
           <TabsTrigger value="chat" className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4" />
             Chat
+          </TabsTrigger>
+          <TabsTrigger value="polls" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Polls
           </TabsTrigger>
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <UserCircle className="h-4 w-4" />
@@ -53,6 +58,10 @@ export default function DashboardContent({ userId }: DashboardContentProps) {
 
         <TabsContent value="chat">
           <ChatView userId={userId} initialMatch={selectedMatch} />
+        </TabsContent>
+
+        <TabsContent value="polls">
+          <PollsView userId={userId} />
         </TabsContent>
 
         <TabsContent value="profile">

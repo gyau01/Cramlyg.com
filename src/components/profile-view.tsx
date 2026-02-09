@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { X, Plus } from "lucide-react";
 
 interface ProfileViewProps {
@@ -28,13 +29,75 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingClasses, setEditingClasses] = useState(false);
   const [editingPreferences, setEditingPreferences] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
   const [newClass, setNewClass] = useState({ class_code: "", class_name: "", semester: "" });
   const [editedClasses, setEditedClasses] = useState<any[]>([]);
   const [editedPreferences, setEditedPreferences] = useState<any>(null);
+  const [editedProfile, setEditedProfile] = useState<any>(null);
+
+  // Available classes and majors from database
+  const [availableClasses, setAvailableClasses] = useState<Array<{ class_code: string; class_name: string }>>([]);
+  const [availableMajors, setAvailableMajors] = useState<Array<{ major_name: string; major_code: string }>>([]);
 
   useEffect(() => {
     loadProfile();
+    fetchAvailableClasses();
+    fetchAvailableMajors();
   }, [userId]);
+
+  const fetchAvailableClasses = async () => {
+    try {
+      const response = await fetch("/api/classes/list?university_id=1000");
+      if (!response.ok) {
+        console.error("Failed to fetch classes:", response.status, response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Error details:", errorData);
+        return;
+      }
+      const data = await response.json();
+      console.log("Classes data received:", data);
+      if (data.classes && Array.isArray(data.classes)) {
+        setAvailableClasses(data.classes);
+        console.log("Available classes set:", data.classes.length, "classes");
+        // Log a few sample classes to verify they're loaded
+        if (data.classes.length > 0) {
+          console.log("Sample classes loaded:", data.classes.map((c: any) => c.class_code).slice(0, 3))
+        }
+      } else {
+        console.warn("No classes in response or invalid format:", data);
+      }
+    } catch (error) {
+      console.error("Error fetching classes:", error);
+    }
+  };
+
+  const fetchAvailableMajors = async () => {
+    try {
+      const response = await fetch("/api/majors/list?university_id=1000");
+      const data = await response.json();
+      if (data.majors) {
+        setAvailableMajors(data.majors);
+      }
+    } catch (error) {
+      console.error("Error fetching majors:", error);
+    }
+  };
+
+  // Convert available classes to combobox options (memoized)
+  const classOptions = useMemo(() => {
+    const options = availableClasses.map(cls => {
+      const classLabel = `${cls.class_code} - ${cls.class_name}`;
+      return {
+        value: classLabel,
+        label: classLabel
+      };
+    });
+    console.log("Class options computed:", options.length, "options");
+    if (options.length > 0) {
+      console.log("Sample options:", options.slice(0, 5).map(o => o.label));
+    }
+    return options;
+  }, [availableClasses]);
 
   const loadProfile = async () => {
     const supabase = createClient();
@@ -107,15 +170,93 @@ export default function ProfileView({ userId }: ProfileViewProps) {
     setUploading(false);
   };
 
+  // Convert available majors to combobox options (memoized)
+  const majorOptions = useMemo(() => {
+    const options = availableMajors.map(major => ({
+      value: major.major_name,
+      label: major.major_name
+    }));
+    return options;
+  }, [availableMajors]);
+
+  const handleEditProfile = () => {
+    setEditedProfile({
+      major: profile?.major || "",
+      year_of_study: profile?.year_of_study || ""
+    });
+    setEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      const supabase = createClient();
+      
+      if (!editedProfile.major || !editedProfile.year_of_study) {
+        alert("Please fill in all required fields.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("student_profiles")
+        .update({
+          major: editedProfile.major,
+          year_of_study: editedProfile.year_of_study,
+          updated_at: new Date().toISOString()
+        })
+        .eq("user_id", userId);
+
+      if (error) {
+        console.error("Save profile error:", error);
+        alert("Failed to save profile: " + error.message);
+        return;
+      }
+
+      // Reload profile from database
+      await loadProfile();
+      setEditingProfile(false);
+      setEditedProfile(null);
+      alert("Profile updated successfully!");
+    } catch (error: any) {
+      console.error("Unexpected error saving profile:", error);
+      alert("An unexpected error occurred: " + (error.message || "Unknown error"));
+    }
+  };
+
   const handleEditClasses = () => {
-    setEditedClasses([...classes]);
-    setEditingClasses(true);
+    // Ensure we have the latest classes before editing
+    const supabase = createClient();
+    supabase
+      .from("student_classes")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Error loading classes for edit:", error);
+          setEditedClasses([...classes]);
+        } else {
+          setClasses(data || []);
+          setEditedClasses(data || []);
+        }
+        setEditingClasses(true);
+      });
   };
 
   const handleAddClass = () => {
+    console.log("handleAddClass called with newClass:", newClass);
     if (newClass.class_code && newClass.class_name && newClass.semester) {
-      setEditedClasses([...editedClasses, { ...newClass, id: `temp-${Date.now()}` }]);
+      const newClassEntry = { ...newClass, id: `temp-${Date.now()}` };
+      console.log("Adding class to editedClasses:", newClassEntry);
+      setEditedClasses([...editedClasses, newClassEntry]);
       setNewClass({ class_code: "", class_name: "", semester: "" });
+      console.log("Updated editedClasses, new length:", editedClasses.length + 1);
+    } else {
+      console.warn("Cannot add class - missing fields:", {
+        hasCode: !!newClass.class_code,
+        hasName: !!newClass.class_name,
+        hasSemester: !!newClass.semester
+      });
+      alert("Please fill in all fields: Class code, Class name, and Semester");
     }
   };
 
@@ -125,6 +266,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
 
   const handleSaveClasses = async () => {
     try {
+      console.log("Saving classes, editedClasses:", editedClasses);
       const supabase = createClient();
       
       // Delete all existing classes
@@ -149,6 +291,9 @@ export default function ProfileView({ userId }: ProfileViewProps) {
           semester: cls.semester?.trim() || ""
         })).filter(cls => cls.class_code && cls.class_name && cls.semester);
         
+        console.log("Classes to insert:", classesToInsert);
+        console.log("User ID:", userId);
+        
         if (classesToInsert.length === 0) {
           alert("Please ensure all classes have a code, name, and semester.");
           return;
@@ -161,10 +306,27 @@ export default function ProfileView({ userId }: ProfileViewProps) {
         
         if (insertError) {
           console.error("Insert error:", insertError);
-          alert("Failed to save classes: " + insertError.message);
+          console.error("Error details:", JSON.stringify(insertError, null, 2));
+          console.error("Classes that failed to insert:", classesToInsert);
+          alert("Failed to save classes: " + insertError.message + "\n\nCheck the browser console for details.");
           return;
         }
+        
+        if (!data || data.length === 0) {
+          console.error("No data returned from insert");
+          alert("Classes save failed - no data returned. Please try again.");
+          return;
+        }
+        
+        console.log("Classes inserted successfully:", data);
+        console.log("Number of classes inserted:", data.length);
+      } else {
+        console.log("No classes to insert - editedClasses is empty");
+        // If user is trying to save with no classes, that's fine (clearing all classes)
       }
+      
+      // Small delay to ensure database transaction is committed
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // Reload classes from database to ensure we have the latest data
       const { data: updatedClasses, error: selectError } = await supabase
@@ -175,13 +337,78 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       
       if (selectError) {
         console.error("Select error:", selectError);
+        console.error("Select error details:", JSON.stringify(selectError, null, 2));
         alert("Classes saved but failed to reload. Please refresh the page.");
-      } else {
-        setClasses(updatedClasses || []);
+        setEditingClasses(false);
+        return;
       }
       
+      console.log("Reloaded classes from database:", updatedClasses);
+      console.log("Number of classes reloaded:", updatedClasses?.length || 0);
+      
+      // Update state with reloaded classes
+      setClasses(updatedClasses || []);
+      
+      // Sync with study_preferences: if using specific class matching, set selected_class_code to the first class
+      if (updatedClasses && updatedClasses.length > 0) {
+        const { data: currentPreferences } = await supabase
+          .from("study_preferences")
+          .select("*")
+          .eq("user_id", userId)
+          .single();
+        
+        if (currentPreferences) {
+          // If using specific class matching and selected_class_code is empty or doesn't match any class, set it to the first class
+          const needsUpdate = currentPreferences.class_matching_preference === "specific" && 
+            (!currentPreferences.selected_class_code || 
+             !updatedClasses.some(cls => cls.class_code?.trim() === currentPreferences.selected_class_code?.trim()));
+          
+          if (needsUpdate) {
+            const firstClassCode = updatedClasses[0].class_code?.trim();
+            if (firstClassCode) {
+              const { error: updatePrefsError } = await supabase
+                .from("study_preferences")
+                .update({ 
+                  selected_class_code: firstClassCode,
+                  updated_at: new Date().toISOString()
+                })
+                .eq("user_id", userId);
+              
+              if (updatePrefsError) {
+                console.error("Error updating preferences with class:", updatePrefsError);
+              } else {
+                console.log("Synced selected_class_code to first class:", firstClassCode);
+              }
+            }
+          }
+        }
+      }
+      
+      // Reload preferences to ensure they have the latest data
+      const { data: updatedPreferences } = await supabase
+        .from("study_preferences")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      if (updatedPreferences) {
+        setPreferences(updatedPreferences);
+      }
+      
+      // Close dialog and reset state
       setEditingClasses(false);
       setNewClass({ class_code: "", class_name: "", semester: "" });
+      setEditedClasses([]); // Clear edited classes
+      
+      // Force a full profile reload to ensure everything is up to date
+      try {
+        await loadProfile();
+        console.log("Profile reloaded successfully");
+      } catch (loadError) {
+        console.error("Error reloading profile:", loadError);
+      }
+      
+      // Show success message after everything is done
+      alert("Classes saved successfully!");
     } catch (error: any) {
       console.error("Unexpected error saving classes:", error);
       alert("An unexpected error occurred: " + (error.message || "Unknown error"));
@@ -189,8 +416,23 @@ export default function ProfileView({ userId }: ProfileViewProps) {
   };
 
   const handleEditPreferences = () => {
-    setEditedPreferences({ ...preferences });
-    setEditingPreferences(true);
+    // Reload preferences to ensure we have the latest data including updated classes
+    const supabase = createClient();
+    supabase
+      .from("study_preferences")
+      .select("*")
+      .eq("user_id", userId)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Error loading preferences:", error);
+          setEditedPreferences({ ...preferences });
+        } else {
+          setPreferences(data);
+          setEditedPreferences({ ...data });
+        }
+        setEditingPreferences(true);
+      });
   };
 
   const togglePreferenceArray = (field: string, value: string) => {
@@ -209,6 +451,53 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       if (editedPreferences.class_matching_preference === "specific" && !editedPreferences.selected_class_code) {
         alert("Please select a class for specific class matching.");
         return;
+      }
+      
+      // If specific class matching is selected, ensure the selected class is in the user's classes
+      if (editedPreferences.class_matching_preference === "specific" && editedPreferences.selected_class_code) {
+        const selectedClassCode = editedPreferences.selected_class_code.trim();
+        
+        // Check if the selected class is already in the user's classes
+        const classExists = classes.some(cls => cls.class_code?.trim() === selectedClassCode);
+        
+        if (!classExists) {
+          // Find the class name from availableClasses
+          const classInfo = availableClasses.find(c => c.class_code?.trim() === selectedClassCode);
+          
+          if (classInfo) {
+            // Determine semester - use the most recent semester from existing classes, or default to "Current"
+            const mostRecentSemester = classes.length > 0 
+              ? classes[classes.length - 1].semester || "Current"
+              : "Current";
+            
+            // Add the class to the user's classes
+            const { error: insertClassError } = await supabase
+              .from("student_classes")
+              .insert({
+                user_id: userId,
+                class_code: classInfo.class_code,
+                class_name: classInfo.class_name,
+                semester: mostRecentSemester
+              });
+            
+            if (insertClassError) {
+              console.error("Error adding class to user's classes:", insertClassError);
+              // Continue anyway - we'll try to save preferences even if adding the class fails
+            } else {
+              console.log("Added selected class to user's classes:", classInfo.class_code);
+              // Reload classes to update the state
+              const { data: updatedClasses } = await supabase
+                .from("student_classes")
+                .select("*")
+                .eq("user_id", userId)
+                .order("created_at", { ascending: false });
+              
+              if (updatedClasses) {
+                setClasses(updatedClasses);
+              }
+            }
+          }
+        }
       }
       
       // Prepare update data
@@ -317,7 +606,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
             </CardTitle>
             <CardDescription>Your academic information and background</CardDescription>
           </div>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleEditProfile}>
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
@@ -351,6 +640,66 @@ export default function ProfileView({ userId }: ProfileViewProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Academic Profile Dialog */}
+      <Dialog open={editingProfile} onOpenChange={setEditingProfile}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Academic Profile</DialogTitle>
+            <DialogDescription>
+              Update your major and year of study information
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 pt-4">
+            <div>
+              <Label htmlFor="major" className="text-base mb-3 block">Major</Label>
+              {availableMajors.length > 0 ? (
+                <Combobox
+                  options={majorOptions}
+                  value={editedProfile?.major || ""}
+                  onValueChange={(value) => setEditedProfile({ ...editedProfile, major: value })}
+                  placeholder="Select your major..."
+                  searchPlaceholder="Search by major name..."
+                  emptyMessage="No major found."
+                />
+              ) : (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">Loading majors... Please wait.</p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="year_of_study" className="text-base mb-3 block">Year of Study</Label>
+              <Select
+                value={editedProfile?.year_of_study || ""}
+                onValueChange={(value) => setEditedProfile({ ...editedProfile, year_of_study: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select year of study" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Freshman">Freshman</SelectItem>
+                  <SelectItem value="Sophomore">Sophomore</SelectItem>
+                  <SelectItem value="Junior">Junior</SelectItem>
+                  <SelectItem value="Senior">Senior</SelectItem>
+                  <SelectItem value="Graduate">Graduate</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button onClick={handleSaveProfile} className="flex-1">
+              Save Changes
+            </Button>
+            <Button variant="outline" onClick={() => setEditingProfile(false)} className="flex-1">
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card className="shadow-lg">
         <CardHeader className="flex flex-row items-start justify-between">
@@ -400,23 +749,29 @@ export default function ProfileView({ userId }: ProfileViewProps) {
                 
                 <div className={`${editedClasses.length > 0 ? 'border-t pt-4' : ''}`}>
                   <Label className="text-base mb-3 block">Add New Class</Label>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-3">
                     <div>
-                      <Label htmlFor="class_code">Class Code</Label>
-                      <Input
-                        id="class_code"
-                        placeholder="CS101"
-                        value={newClass.class_code}
-                        onChange={(e) => setNewClass({ ...newClass, class_code: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="class_name">Class Name</Label>
-                      <Input
-                        id="class_name"
-                        placeholder="Intro to CS"
-                        value={newClass.class_name}
-                        onChange={(e) => setNewClass({ ...newClass, class_name: e.target.value })}
+                      <Label>Class</Label>
+                      <Combobox
+                        options={classOptions}
+                        value={newClass.class_code && newClass.class_name ? `${newClass.class_code} - ${newClass.class_name}` : ""}
+                        onValueChange={(value) => {
+                          if (value) {
+                            const match = value.match(/^(.+?)\s*-\s*(.+)$/);
+                            if (match) {
+                              setNewClass({
+                                ...newClass,
+                                class_code: match[1].trim(),
+                                class_name: match[2].trim()
+                              });
+                            }
+                          } else {
+                            setNewClass({ ...newClass, class_code: "", class_name: "" });
+                          }
+                        }}
+                        placeholder="Search and select class..."
+                        searchPlaceholder="Search by code or name..."
+                        emptyMessage="No class found."
                       />
                     </div>
                     <div>
@@ -641,26 +996,29 @@ export default function ProfileView({ userId }: ProfileViewProps) {
                         <p className="text-sm text-gray-600 mb-3">
                           Choose which class you want to use for matching with other students
                         </p>
-                        {classes.length > 0 ? (
-                          <Select
-                            value={editedPreferences.selected_class_code || ""}
-                            onValueChange={(value) => setEditedPreferences({ ...editedPreferences, selected_class_code: value })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a class" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {classes.map((cls) => (
-                                <SelectItem key={cls.id} value={cls.class_code}>
-                                  {cls.class_code} - {cls.class_name} ({cls.semester})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        {availableClasses.length > 0 ? (
+                          <Combobox
+                            options={classOptions}
+                            value={editedPreferences.selected_class_code 
+                              ? availableClasses.find(c => c.class_code === editedPreferences.selected_class_code)
+                                ? `${editedPreferences.selected_class_code} - ${availableClasses.find(c => c.class_code === editedPreferences.selected_class_code)?.class_name || ''}`
+                                : editedPreferences.selected_class_code
+                              : ""}
+                            onValueChange={(value) => {
+                              // The value from classOptions is in format "CODE - Name"
+                              // Extract just the class code for storage
+                              const match = value.match(/^(.+?)\s*-\s*/);
+                              const classCode = match ? match[1].trim() : value;
+                              setEditedPreferences({ ...editedPreferences, selected_class_code: classCode });
+                            }}
+                            placeholder="Select a class..."
+                            searchPlaceholder="Search by code or name..."
+                            emptyMessage="No class found."
+                          />
                         ) : (
                           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                             <p className="text-sm text-yellow-800">
-                              No classes found. Please add classes in the Classes section first.
+                              Loading classes... Please wait.
                             </p>
                           </div>
                         )}
@@ -744,7 +1102,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
             {preferences?.class_matching_preference === "specific" && preferences?.selected_class_code && (
               <div className="mt-2">
                 <Badge variant="outline" className="text-xs">
-                  {classes.find(c => c.class_code === preferences.selected_class_code)?.class_name || preferences.selected_class_code}
+                  {availableClasses.find(c => c.class_code === preferences.selected_class_code)?.class_name || preferences.selected_class_code}
                 </Badge>
               </div>
             )}

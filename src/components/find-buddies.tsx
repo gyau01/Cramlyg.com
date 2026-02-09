@@ -5,9 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Users, BookOpen, TrendingUp, Send, Loader2 } from "lucide-react";
 import { createClient } from "../../supabase/client";
 
@@ -18,9 +15,7 @@ interface FindBuddiesProps {
 export default function FindBuddies({ userId }: FindBuddiesProps) {
   const [potentialMatches, setPotentialMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sendingRequest, setSendingRequest] = useState<string | null>(null);
-  const [requestMessage, setRequestMessage] = useState("");
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
 
   useEffect(() => {
     loadPotentialMatches();
@@ -56,27 +51,30 @@ export default function FindBuddies({ userId }: FindBuddiesProps) {
     }
   };
 
-  const sendMatchRequest = async (receiverId: string) => {
-    setSendingRequest(receiverId);
+  const connectWithUser = async (otherUserId: string, compatibilityScore: number) => {
+    setConnecting(otherUserId);
     try {
-      const response = await fetch("/api/matches/request", {
+      const response = await fetch("/api/matches/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          receiverId,
-          message: requestMessage
+          otherUserId,
+          compatibilityScore
         })
       });
 
       if (response.ok) {
-        setPotentialMatches(potentialMatches.filter(m => m.user_id !== receiverId));
-        setRequestMessage("");
-        setSelectedUser(null);
+        // Remove the user from potential matches
+        setPotentialMatches(potentialMatches.filter(m => m.user_id !== otherUserId));
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Failed to connect. Please try again.");
       }
     } catch (error) {
-      console.error("Error sending request:", error);
+      console.error("Error connecting:", error);
+      alert("An error occurred. Please try again.");
     } finally {
-      setSendingRequest(null);
+      setConnecting(null);
     }
   };
 
@@ -157,54 +155,23 @@ export default function FindBuddies({ userId }: FindBuddiesProps) {
                   </div>
                 </div>
 
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button 
-                      className="w-full" 
-                      onClick={() => setSelectedUser(match)}
-                      disabled={sendingRequest === match.user_id}
-                    >
-                      {sendingRequest === match.user_id ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Sending...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-4 w-4 mr-2" />
-                          Send Connection Request
-                        </>
-                      )}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Send Connection Request</DialogTitle>
-                      <DialogDescription>
-                        Send a message to {match.full_name || "this student"} to introduce yourself
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div>
-                        <Label htmlFor="message">Message (Optional)</Label>
-                        <Textarea
-                          id="message"
-                          value={requestMessage}
-                          onChange={(e) => setRequestMessage(e.target.value)}
-                          placeholder="Hi! I noticed we're taking similar classes. Would you like to study together?"
-                          rows={4}
-                        />
-                      </div>
-                      <Button 
-                        onClick={() => sendMatchRequest(match.user_id)} 
-                        className="w-full"
-                        disabled={sendingRequest === match.user_id}
-                      >
-                        {sendingRequest === match.user_id ? "Sending..." : "Send Request"}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <Button 
+                  className="w-full" 
+                  onClick={() => connectWithUser(match.user_id, match.compatibility_score)}
+                  disabled={connecting === match.user_id}
+                >
+                  {connecting === match.user_id ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" />
+                      Connect
+                    </>
+                  )}
+                </Button>
               </CardContent>
             </Card>
           ))}
