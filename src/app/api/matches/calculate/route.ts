@@ -1,21 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { SCORING, applyScore } from "@/lib/matchScoring";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 
-// Normalize class codes for comparison (remove spaces, convert to uppercase)
+// Normalize class codes
 function normalizeClassCode(code: string): string {
-  return code.replace(/\s+/g, '').toUpperCase();
+  return code.replace(/\s+/g, "").toUpperCase();
 }
 
 export async function POST(request: Request) {
   try {
     const { userId } = await request.json();
-    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user's profile, classes, and preferences
     const { data: userProfile } = await supabase
       .from("student_profiles")
       .select("*")
@@ -37,9 +36,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Profile incomplete" }, { status: 400 });
     }
 
-    const userClassCodes = userClasses.map(c => normalizeClassCode(c.class_code));
+    const userClassCodes = userClasses.map(c =>
+      normalizeClassCode(c.class_code)
+    );
 
-    // Get all other completed profiles
     const { data: allProfiles } = await supabase
       .from("student_profiles")
       .select("*")
@@ -47,10 +47,10 @@ export async function POST(request: Request) {
       .neq("user_id", userId);
 
     if (!allProfiles || allProfiles.length === 0) {
-      return NextResponse.json({ matches: [] });
+      return NextResponse.json({ success: true, matchCount: 0 });
     }
 
-    const matches = [];
+    const matches: any[] = [];
 
     for (const profile of allProfiles) {
       const { data: theirClasses } = await supabase
@@ -66,95 +66,134 @@ export async function POST(request: Request) {
 
       if (!theirClasses || !theirPreferences) continue;
 
-      const theirClassCodes = theirClasses.map(c => normalizeClassCode(c.class_code));
+      const theirClassCodes = theirClasses.map(c =>
+        normalizeClassCode(c.class_code)
+      );
 
-      // Determine class matching based on user's preference
+      // ----- CLASS MATCHING LOGIC (unchanged) -----
       let classMatch = false;
-      const userClassMatchingPreference = userPreferences.class_matching_preference || "specific";
-      const theirClassMatchingPreference = theirPreferences.class_matching_preference || "specific";
+      const userPref = userPreferences.class_matching_preference || "specific";
+      const theirPref = theirPreferences.class_matching_preference || "specific";
 
-      if (userClassMatchingPreference === "generic" || theirClassMatchingPreference === "generic") {
-        // Generic matching: match by subject area (extract prefix from class codes)
-        // e.g., "CS101" -> "CS", "MATH201" -> "MATH"
-        const extractSubject = (code: string): string => {
-          // Extract letters at the start (subject prefix)
-          const match = code.match(/^([A-Z]+)/);
-          return match ? match[1] : "";
-        };
+      if (userPref === "generic" || theirPref === "generic") {
+        const extractSubject = (code: string) =>
+          code.match(/^([A-Z]+)/)?.[1] || "";
 
-        const userSubjects = new Set(userClassCodes.map(extractSubject).filter(Boolean));
-        const theirSubjects = new Set(theirClassCodes.map(extractSubject).filter(Boolean));
-        
-        // Match if they share any subject area OR same major
-        classMatch = Array.from(userSubjects).some(subj => theirSubjects.has(subj)) || 
-                     userProfile.major === profile.major;
+        const userSubjects = new Set(userClassCodes.map(extractSubject));
+        const theirSubjects = new Set(theirClassCodes.map(extractSubject));
+
+        classMatch =
+          Array.from(userSubjects).some(s => theirSubjects.has(s)) ||
+          userProfile.major === profile.major;
       } else {
-        // Specific matching: use selected class if available, otherwise match any class
         if (userPreferences.selected_class_code) {
-          // User has selected a specific class - match if the other user has that exact class
-          const normalizedSelectedClass = normalizeClassCode(userPreferences.selected_class_code);
-          classMatch = theirClassCodes.includes(normalizedSelectedClass);
+          classMatch = theirClassCodes.includes(
+            normalizeClassCode(userPreferences.selected_class_code)
+          );
         } else if (theirPreferences.selected_class_code) {
-          // Other user has selected a specific class - match if current user has that class
-          const normalizedSelectedClass = normalizeClassCode(theirPreferences.selected_class_code);
-          classMatch = userClassCodes.includes(normalizedSelectedClass);
+          classMatch = userClassCodes.includes(
+            normalizeClassCode(theirPreferences.selected_class_code)
+          );
         } else {
-          // No specific class selected, match any common class
-          classMatch = userClassCodes.some(code => theirClassCodes.includes(code));
+          classMatch = userClassCodes.some(c =>
+            theirClassCodes.includes(c)
+          );
         }
       }
 
-      // Data structure for matching criteria
       const matchCriteria = {
         classes: classMatch,
         major: userProfile.major === profile.major,
         year: userProfile.year_of_study === profile.year_of_study,
-          studyTime: (userPreferences.study_time_preference || []).some((time: string) =>
-          (theirPreferences.study_time_preference || []).includes(time)
+        studyTime: (userPreferences.study_time_preference || []).some(
+          (t: string) =>
+            (theirPreferences.study_time_preference || []).includes(t)
         ),
-        location: (userPreferences.study_location_preference || []).some((loc: string) => 
-          (theirPreferences.study_location_preference || []).includes(loc)
+        location: (userPreferences.study_location_preference || []).some(
+          (l: string) =>
+            (theirPreferences.study_location_preference || []).includes(l)
         ),
-        style: (userPreferences.study_style || []).some((style: string) => 
-          (theirPreferences.study_style || []).includes(style)
+        style: (userPreferences.study_style || []).some(
+          (s: string) =>
+            (theirPreferences.study_style || []).includes(s)
         )
       };
 
-      // Count matching factors
-      const matchingFactors = Object.values(matchCriteria).filter(Boolean).length;
-      const totalFactors = Object.keys(matchCriteria).length;
-      const compatibilityScore = (matchingFactors / totalFactors) * 100;
+      let scoreTotal = 0;
 
-      // Create match if at least 1 factor matches
-      if (matchingFactors >= 1) {
-        matches.push({
-          user1_id: userId,
-          user2_id: profile.user_id,
-          compatibility_score: Math.round(compatibilityScore * 100) / 100
-        });
-        
-        matches.push({
-          user1_id: profile.user_id,
-          user2_id: userId,
-          compatibility_score: Math.round(compatibilityScore * 100) / 100
-        });
+      scoreTotal += applyScore(
+        matchCriteria.classes,
+        SCORING.classes.points,
+        SCORING.classes.weight,
+        userPreferences.class_priority
+      );
+
+      scoreTotal += applyScore(
+        matchCriteria.major,
+        SCORING.major.points,
+        SCORING.major.weight,
+        userPreferences.major_priority
+      );
+
+      scoreTotal += applyScore(
+        matchCriteria.year,
+        SCORING.year.points,
+        SCORING.year.weight,
+        userPreferences.year_priority
+      );
+
+      scoreTotal += applyScore(
+        matchCriteria.studyTime,
+        SCORING.studyTime.points,
+        SCORING.studyTime.weight,
+        userPreferences.time_priority
+      );
+
+      scoreTotal += applyScore(
+        matchCriteria.location,
+        SCORING.location.points,
+        SCORING.location.weight,
+        userPreferences.location_priority
+      );
+
+      scoreTotal += applyScore(
+        matchCriteria.style,
+        SCORING.style.points,
+        SCORING.style.weight,
+        userPreferences.style_priority
+      );
+
+      if (scoreTotal >= SCORING.minTotal) {
+        matches.push(
+          {
+            user1_id: userId,
+            user2_id: profile.user_id,
+            compatibility_score: Math.round(scoreTotal)
+          },
+          {
+            user1_id: profile.user_id,
+            user2_id: userId,
+            compatibility_score: Math.round(scoreTotal)
+          }
+        );
       }
     }
 
-    // Save matches to database
     if (matches.length > 0) {
       await supabase.from("matches").upsert(matches, {
         onConflict: "user1_id,user2_id"
       });
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      matchCount: matches.length / 2 
+    return NextResponse.json({
+      success: true,
+      matchCount: matches.length / 2
     });
-
   } catch (error) {
     console.error("Error calculating matches:", error);
-    return NextResponse.json({ error: "Failed to calculate matches" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to calculate matches" },
+      { status: 500 }
+    );
   }
 }
