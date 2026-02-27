@@ -3,16 +3,17 @@ import Image from 'next/image'
 import { createClient } from '../../supabase/server'
 import { Button } from './ui/button'
 import UserProfile from './user-profile'
+import MobileMenu from './mobile-menu'
 
 export default async function Navbar() {
-  const supabase = createClient()
-
-  const { data: { user } } = await (await supabase).auth.getUser()
-
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   return (
-    <nav className="w-full border-b border-gray-200 bg-white py-3 shadow-sm">
+    <nav className="w-full border-b border-gray-200 bg-white py-3 shadow-sm relative z-50">
       <div className="container mx-auto px-4 flex justify-between items-center">
+
+        {/* Logo */}
         <Link href="/" prefetch className="flex items-center gap-2">
           <Image 
             src="/logo.png" 
@@ -23,7 +24,9 @@ export default async function Navbar() {
             priority
           />
         </Link>
-        <div className="flex gap-4 items-center absolute left-1/2 transform -translate-x-1/2">
+
+        {/* Desktop Center Links */}
+        <div className="hidden md:flex gap-4 items-center">
           <Link href="/pricing">
             <Button variant="ghost">Pricing</Button>
           </Link>
@@ -34,24 +37,25 @@ export default async function Navbar() {
             <Button variant="ghost">Solutions</Button>
           </Link>
         </div>
-        <div className="flex gap-4 items-center ml-auto">
+
+        {/* Right Side */}
+        <div className="flex gap-4 items-center relative">
+          
+          {/* Mobile Hamburger */}
+          <MobileMenu />
+
           {user ? (
             <>
-              <Link
-                href="/dashboard"
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-              >
-                <Button>
-                  Dashboard
-                </Button>
+              <Link href="/dashboard">
+                <Button>Dashboard</Button>
               </Link>
-              <UserProfile  />
+              <UserProfile />
             </>
           ) : (
             <>
               <Link
                 href="/sign-in"
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                className="text-sm font-medium text-gray-700 hover:text-gray-900"
               >
                 Sign In
               </Link>
