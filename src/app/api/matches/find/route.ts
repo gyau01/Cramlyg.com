@@ -99,13 +99,13 @@ export async function GET(request: Request) {
             major: myProfile?.major === profile.major,
             year: myProfile?.year_of_study === profile.year_of_study,
             studyTime: (myPreferences?.study_time_preference || []).some(
-              t => theirPreferences?.study_time_preference?.includes(t)
+              (t: string) => theirPreferences?.study_time_preference?.includes(t)
             ),
             location: (myPreferences?.study_location_preference || []).some(
-              l => theirPreferences?.study_location_preference?.includes(l)
+              (l: string) => theirPreferences?.study_location_preference?.includes(l)
             ),
             style: (myPreferences?.study_style || []).some(
-              s => theirPreferences?.study_style?.includes(s)
+              (s: string) => theirPreferences?.study_style?.includes(s)
             )
           };
 
