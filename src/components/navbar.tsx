@@ -16,7 +16,7 @@ export default async function Navbar() {
         {/* Logo */}
         <Link href="/" prefetch className="flex items-center gap-2">
           <Image 
-            src="/logo.png" 
+            src="/cramlylogo.png" 
             alt="Cramly Logo" 
             width={240} 
             height={80}
