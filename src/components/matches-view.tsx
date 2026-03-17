@@ -16,6 +16,7 @@ interface MatchesViewProps {
 export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rematching, setRematching] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -74,6 +75,20 @@ export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
     setLoading(false);
   };
 
+  const handleRematch = async () => {
+    try {
+      setRematching(true);
+      await fetch("/api/matches/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      await loadData();
+    } finally {
+      setRematching(false);
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-12">Loading your study buddies...</div>;
   }
@@ -85,6 +100,13 @@ export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
           <h2 className="text-2xl font-bold">Your Study Buddies</h2>
           <p className="text-gray-600">Found {matches.length} compatible students</p>
         </div>
+        <Button
+          onClick={handleRematch}
+          disabled={rematching}
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          {rematching ? "Rematching..." : "Rematch"}
+        </Button>
       </div>
 
       {matches.length === 0 ? (

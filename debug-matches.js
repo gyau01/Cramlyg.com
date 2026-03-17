@@ -97,7 +97,7 @@ async function debugMatches() {
     
     console.log('Calculating matches for:', profile.user_id);
     
-    const response = await fetch('https://1292f820-483f-46c3-87b1-13dc3270153d.canvases.tempo.build/api/matches/calculate', {
+    const response = await fetch('http://localhost:3001/api/matches/calculate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: profile.user_id })

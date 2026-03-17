@@ -23,7 +23,7 @@ export async function POST() {
 
     // Recalculate matches for each user
     for (const profile of allProfiles) {
-      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase.co', 'canvases.tempo.build')}/api/matches/calculate`, {
+      await fetch(`http://localhost:3001/api/matches/calculate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: profile.user_id })
