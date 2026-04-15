@@ -17,17 +17,22 @@ export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [rematching, setRematching] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [rematchError, setRematchError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
-    
-    // Subscribe to real-time updates
+
     const supabase = createClient();
     const channel = supabase
-      .channel('match_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
-        loadData();
-      })
+      .channel("match_updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => {
+          loadData();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -36,54 +41,45 @@ export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
   }, [userId]);
 
   const loadData = async () => {
-    const supabase = createClient();
-
-    const { data: matchesRes } = await supabase
-      .from("matches")
-      .select("*")
-      .eq("user1_id", userId)
-      .order("compatibility_score", { ascending: false });
-
-    // Get match details with user info
-    const matchDetails = await Promise.all(
-      (matchesRes || []).map(async (match) => {
-        const otherId = match.user2_id;
-        
-        const { data: otherUser } = await supabase
-          .from("users")
-          .select("full_name, email")
-          .eq("user_id", otherId)
-          .single();
-        
-        const { data: profile } = await supabase
-          .from("student_profiles")
-          .select("major, year_of_study")
-          .eq("user_id", otherId)
-          .single();
-
-        const { data: classes } = await supabase
-          .from("student_classes")
-          .select("class_code, class_name")
-          .eq("user_id", otherId)
-          .limit(3);
-
-        return { ...match, otherUser, profile, classes, otherId };
-      })
-    );
-
-    setMatches(matchDetails);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/matches/me", { credentials: "include" });
+      const body = (await res.json().catch(() => ({}))) as {
+        matches?: any[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setLoadError(body.error || `Could not load matches (${res.status})`);
+        setMatches([]);
+        return;
+      }
+      setMatches(body.matches ?? []);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not load matches");
+      setMatches([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRematch = async () => {
     try {
+      setRematchError(null);
       setRematching(true);
-      await fetch("/api/matches/calculate", {
+      const res = await fetch("/api/matches/calculate", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setRematchError(body.error || `Rematch failed (${res.status})`);
+        return;
+      }
       await loadData();
+    } catch (e) {
+      setRematchError(e instanceof Error ? e.message : "Rematch failed");
     } finally {
       setRematching(false);
     }
@@ -95,18 +91,28 @@ export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
 
   return (
     <div className="space-y-6">
+      {loadError ? (
+        <p className="text-sm text-red-600 text-center" role="alert">
+          {loadError}
+        </p>
+      ) : null}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Your Study Buddies</h2>
           <p className="text-gray-600">Found {matches.length} compatible students</p>
         </div>
-        <Button
-          onClick={handleRematch}
-          disabled={rematching}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          {rematching ? "Rematching..." : "Rematch"}
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            onClick={handleRematch}
+            disabled={rematching}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {rematching ? "Rematching..." : "Rematch"}
+          </Button>
+          {rematchError ? (
+            <p className="text-sm text-red-600 max-w-xs text-right">{rematchError}</p>
+          ) : null}
+        </div>
       </div>
 
       {matches.length === 0 ? (
