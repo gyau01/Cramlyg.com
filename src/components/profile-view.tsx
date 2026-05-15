@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
 import { X, Plus } from "lucide-react";
+import { PROFILE_USER_UPDATED_EVENT } from "./user-profile";
 
 interface ProfileViewProps {
   userId: string;
@@ -165,6 +166,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       alert('Failed to update profile. Please try again.');
     } else {
       setUser({ ...user, profile_picture_url: publicUrl });
+      window.dispatchEvent(new Event(PROFILE_USER_UPDATED_EVENT));
     }
 
     setUploading(false);

@@ -40,35 +40,53 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
 
   useEffect(() => {
     if (selectedMatch) {
-      loadMessages(selectedMatch.id);
-      markMessagesAsRead(selectedMatch.id);
-      const cleanup = subscribeToMessages(selectedMatch.id);
+      const ids: string[] =
+        selectedMatch.allMatchIds?.length > 0
+          ? selectedMatch.allMatchIds
+          : [selectedMatch.id];
+      loadMessages(ids);
+      markMessagesAsRead(ids);
+      const cleanup = subscribeToMessages(ids);
       return cleanup;
     }
   }, [selectedMatch]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+
+  const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
   const loadMatches = async () => {
     const supabase = createClient();
-    
+
     const { data: matchesData } = await supabase
       .from("matches")
       .select("*")
       .or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
 
-    console.log('Loaded matches:', matchesData?.length);
+    const rows = matchesData || [];
+    const byPair = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = pairKey(row.user1_id, row.user2_id);
+      const list = byPair.get(key) ?? [];
+      list.push(row);
+      byPair.set(key, list);
+    }
+
+    const mergedRows = Array.from(byPair.values()).map((group) => {
+      const canonical =
+        group.find((g) => g.user1_id === userId) ?? group[0];
+      const restIds = group
+        .filter((g) => g.id !== canonical.id)
+        .map((g) => g.id);
+      const allMatchIds = [canonical.id, ...restIds];
+      return { ...canonical, allMatchIds };
+    });
 
     const matchDetails = await Promise.all(
-      (matchesData || []).map(async (match) => {
-        const otherId = match.user1_id === userId ? match.user2_id : match.user1_id;
-        
+      mergedRows.map(async (match) => {
+        const otherId =
+          match.user1_id === userId ? match.user2_id : match.user1_id;
+
         const { data: otherUser } = await supabase
           .from("users")
           .select("full_name, email, profile_picture_url")
@@ -78,126 +96,151 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
         const { count } = await supabase
           .from("messages")
           .select("*", { count: "exact", head: true })
-          .eq("match_id", match.id)
+          .in("match_id", match.allMatchIds)
           .eq("read", false)
           .neq("sender_id", userId);
 
-        const { data: lastMessage } = await supabase
+        const { data: lastRows } = await supabase
           .from("messages")
           .select("created_at")
-          .eq("match_id", match.id)
+          .in("match_id", match.allMatchIds)
           .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
+          .limit(1);
 
-        return { 
-          ...match, 
-          otherUser, 
-          otherId, 
+        const lastMessageTime =
+          lastRows?.[0]?.created_at ?? match.created_at;
+
+        return {
+          ...match,
+          otherUser,
+          otherId,
           unreadCount: count || 0,
-          lastMessageTime: lastMessage?.created_at || match.created_at
+          lastMessageTime,
         };
       })
     );
 
-    const uniqueMatches = matchDetails.filter((match, index, self) => {
-      return index === self.findIndex(m => {
-        const pair1 = [match.user1_id, match.user2_id].sort().join('-');
-        const pair2 = [m.user1_id, m.user2_id].sort().join('-');
-        return pair1 === pair2;
-      });
-    });
-
-    const sortedMatches = uniqueMatches.sort((a, b) => {
+    const sortedMatches = matchDetails.sort((a, b) => {
       const timeA = new Date(a.lastMessageTime).getTime();
       const timeB = new Date(b.lastMessageTime).getTime();
       return timeB - timeA;
     });
 
-    console.log('Unique matches:', sortedMatches.length);
     setMatches(sortedMatches);
-    
+
     const counts: Record<string, number> = {};
-    sortedMatches.forEach(match => {
+    sortedMatches.forEach((match) => {
       counts[match.id] = match.unreadCount;
     });
     setUnreadCounts(counts);
-    
+
+    setSelectedMatch((prev: any) => {
+      if (!prev) return prev;
+      const hit = sortedMatches.find(
+        (m) =>
+          (m.allMatchIds && m.allMatchIds.includes(prev.id)) ||
+          m.id === prev.id
+      );
+      return hit ?? prev;
+    });
+
     setLoading(false);
   };
 
-  const loadMessages = async (matchId: string) => {
+  const isOwnMessage = (senderId: string) =>
+    (senderId || "").toLowerCase() === (userId || "").toLowerCase();
+
+  const loadMessages = async (matchIds: string[]) => {
     const supabase = createClient();
-    
-    console.log('Loading messages for match:', matchId);
-    
+    const uniqueIds = Array.from(new Set(matchIds));
+
     const { data, error } = await supabase
       .from("messages")
       .select("*")
-      .eq("match_id", matchId)
+      .in("match_id", uniqueIds)
       .order("created_at", { ascending: true });
 
     if (error) {
       console.error("Load messages error:", error);
     } else {
-      console.log('Loaded messages:', data?.length);
-      setMessages(data || []);
+      const sorted = [...(data || [])].sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setMessages(sorted);
     }
   };
 
-  const markMessagesAsRead = async (matchId: string) => {
+  const markMessagesAsRead = async (matchIds: string[]) => {
     const supabase = createClient();
-    
+    const uniqueIds = Array.from(new Set(matchIds));
+    const primaryId = uniqueIds[0];
+
     await supabase
       .from("messages")
       .update({ read: true })
-      .eq("match_id", matchId)
+      .in("match_id", uniqueIds)
       .neq("sender_id", userId)
       .eq("read", false);
 
-    setUnreadCounts(prev => ({ ...prev, [matchId]: 0 }));
+    setUnreadCounts((prev) => ({ ...prev, [primaryId]: 0 }));
     loadMatches();
   };
 
-  const subscribeToMessages = (matchId: string) => {
+  const subscribeToMessages = (matchIds: string[]) => {
     const supabase = createClient();
-    
-    const channel = supabase
-      .channel(`messages:${matchId}`)
-      .on(
-        'postgres_changes',
+    const uniqueIds = Array.from(new Set(matchIds));
+    const channelName = `messages:${uniqueIds.sort().join(",")}`;
+
+    const channel = supabase.channel(channelName);
+
+    const onInsert = (payload: { new: Record<string, unknown> }) => {
+      const row = payload.new as {
+        id: string;
+        match_id: string;
+        sender_id: string;
+        created_at: string;
+      };
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === row.id)) return prev;
+        return [...prev, row].sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      });
+
+      if (!isOwnMessage(row.sender_id)) {
+        markMessagesAsRead(uniqueIds);
+      }
+
+      setMatches((prevMatches) => {
+        const updatedMatches = prevMatches.map((match) =>
+          match.allMatchIds?.includes(row.match_id) || match.id === row.match_id
+            ? { ...match, lastMessageTime: row.created_at }
+            : match
+        );
+        return updatedMatches.sort((a, b) => {
+          const timeA = new Date(a.lastMessageTime).getTime();
+          const timeB = new Date(b.lastMessageTime).getTime();
+          return timeB - timeA;
+        });
+      });
+    };
+
+    for (const mid of uniqueIds) {
+      channel.on(
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `match_id=eq.${matchId}`
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `match_id=eq.${mid}`,
         },
-        (payload) => {
-          console.log('New message received:', payload.new);
-          setMessages((prev) => [...prev, payload.new]);
-          
-          if (payload.new.sender_id !== userId) {
-            markMessagesAsRead(matchId);
-          }
-          
-          // Update match order when receiving a message
-          setMatches(prevMatches => {
-            const updatedMatches = prevMatches.map(match => 
-              match.id === matchId 
-                ? { ...match, lastMessageTime: payload.new.created_at }
-                : match
-            );
-            
-            // Sort by lastMessageTime
-            return updatedMatches.sort((a, b) => {
-              const timeA = new Date(a.lastMessageTime).getTime();
-              const timeB = new Date(b.lastMessageTime).getTime();
-              return timeB - timeA;
-            });
-          });
-        }
-      )
-      .subscribe();
+        onInsert
+      );
+    }
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -292,14 +335,14 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       clearImage();
       
       // Update the match's lastMessageTime to current time
-      setMatches(prevMatches => {
-        const updatedMatches = prevMatches.map(match => 
-          match.id === selectedMatch.id 
+      setMatches((prevMatches) => {
+        const updatedMatches = prevMatches.map((match) =>
+          match.id === selectedMatch.id ||
+            match.allMatchIds?.includes(selectedMatch.id)
             ? { ...match, lastMessageTime: new Date().toISOString() }
             : match
         );
-        
-        // Sort by lastMessageTime
+
         return updatedMatches.sort((a, b) => {
           const timeA = new Date(a.lastMessageTime).getTime();
           const timeB = new Date(b.lastMessageTime).getTime();
@@ -308,7 +351,11 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       });
       
       setTimeout(() => {
-        loadMessages(selectedMatch.id);
+        const ids =
+          selectedMatch.allMatchIds?.length > 0
+            ? selectedMatch.allMatchIds
+            : [selectedMatch.id];
+        loadMessages(ids);
       }, 500);
     }
     setUploading(false);
@@ -431,11 +478,11 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                     {messages.map((message) => (
                       <div
                         key={message.id}
-                        className={`flex ${message.sender_id === userId ? "justify-end" : "justify-start"}`}
+                        className={`flex ${isOwnMessage(message.sender_id) ? "justify-end" : "justify-start"}`}
                       >
                         <div
                           className={`max-w-[70%] rounded-lg px-4 py-2 ${
-                            message.sender_id === userId
+                            isOwnMessage(message.sender_id)
                               ? "bg-blue-600 text-white"
                               : "bg-gray-100 text-gray-900"
                           }`}
@@ -449,7 +496,7 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                             />
                           )}
                           {message.content && <p className="text-sm">{message.content}</p>}
-                          <p className={`text-xs mt-1 ${message.sender_id === userId ? "text-blue-100" : "text-gray-500"}`}>
+                          <p className={`text-xs mt-1 ${isOwnMessage(message.sender_id) ? "text-blue-100" : "text-gray-500"}`}>
                             {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>

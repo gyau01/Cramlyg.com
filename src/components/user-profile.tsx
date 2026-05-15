@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { UserCircle } from 'lucide-react'
 import { Button } from './ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
@@ -7,17 +7,16 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import { createClient } from '../../supabase/client'
 import { useRouter } from 'next/navigation'
 
+/** Fired from Profile (and similar) when `public.users` display fields change so the header can refetch. */
+export const PROFILE_USER_UPDATED_EVENT = "cramly:profile-user-updated"
+
 export default function UserProfile() {
     const [userName, setUserName] = useState<string>("")
     const [profilePicture, setProfilePicture] = useState<string | null>(null)
-    const supabase = createClient()
     const router = useRouter()
 
-    useEffect(() => {
-        loadUserData()
-    }, [])
-
-    const loadUserData = async () => {
+    const loadUserData = useCallback(async (bustImageCache?: boolean) => {
+        const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
             const { data } = await supabase
@@ -28,17 +27,34 @@ export default function UserProfile() {
             
             if (data) {
                 setUserName(data.full_name || "")
-                setProfilePicture(data.profile_picture_url)
+                const raw = data.profile_picture_url
+                if (!raw) {
+                    setProfilePicture(null)
+                } else if (bustImageCache) {
+                    const base = raw.split("?")[0]
+                    setProfilePicture(`${base}?v=${Date.now()}`)
+                } else {
+                    setProfilePicture(raw)
+                }
             }
         }
-    }
+    }, [])
+
+    useEffect(() => {
+        loadUserData()
+        const onUserProfileUpdated = () => {
+            loadUserData(true)
+        }
+        window.addEventListener(PROFILE_USER_UPDATED_EVENT, onUserProfileUpdated)
+        return () => window.removeEventListener(PROFILE_USER_UPDATED_EVENT, onUserProfileUpdated)
+    }, [loadUserData])
 
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
                     <Avatar className="h-8 w-8">
-                        {profilePicture && <AvatarImage src={profilePicture} alt={userName} />}
+                        {profilePicture && <AvatarImage key={profilePicture} src={profilePicture} alt={userName} />}
                         <AvatarFallback className="bg-blue-600 text-white">
                             {userName?.[0]?.toUpperCase() || <UserCircle className="h-5 w-5" />}
                         </AvatarFallback>
@@ -53,6 +69,7 @@ export default function UserProfile() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={async () => {
+                    const supabase = createClient()
                     await supabase.auth.signOut()
                     router.push("/")
                 }}>
