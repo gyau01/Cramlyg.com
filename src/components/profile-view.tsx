@@ -15,6 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Combobox } from "@/components/ui/combobox";
 import { X, Plus } from "lucide-react";
 import { PROFILE_USER_UPDATED_EVENT } from "./user-profile";
+import {
+  STUDY_STYLE_OPTIONS,
+  normalizeStudyStyles,
+} from "@/lib/studyPreferenceOptions";
 
 interface ProfileViewProps {
   userId: string;
@@ -113,7 +117,13 @@ export default function ProfileView({ userId }: ProfileViewProps) {
     setUser(userRes.data);
     setProfile(profileRes.data);
     setClasses(classesRes.data || []);
-    setPreferences(preferencesRes.data);
+    const prefs = preferencesRes.data
+      ? {
+          ...preferencesRes.data,
+          study_style: normalizeStudyStyles(preferencesRes.data.study_style),
+        }
+      : null;
+    setPreferences(prefs);
     setLoading(false);
   };
 
@@ -426,13 +436,17 @@ export default function ProfileView({ userId }: ProfileViewProps) {
       .eq("user_id", userId)
       .single()
       .then(({ data, error }) => {
-        if (error) {
-          console.error("Error loading preferences:", error);
-          setEditedPreferences({ ...preferences });
-        } else {
-          setPreferences(data);
-          setEditedPreferences({ ...data });
+        const prefs = error ? preferences : data;
+        const normalized = prefs
+          ? {
+              ...prefs,
+              study_style: normalizeStudyStyles(prefs.study_style),
+            }
+          : prefs;
+        if (!error && data) {
+          setPreferences(normalized);
         }
+        setEditedPreferences(normalized ? { ...normalized } : { ...preferences });
         setEditingPreferences(true);
       });
   };
@@ -507,7 +521,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
         study_time_preference: editedPreferences.study_time_preference || [],
         study_location_preference: editedPreferences.study_location_preference || [],
         group_size_preference: editedPreferences.group_size_preference || null,
-        study_style: editedPreferences.study_style || [],
+        study_style: normalizeStudyStyles(editedPreferences.study_style),
         class_matching_preference: editedPreferences.class_matching_preference || "specific",
         updated_at: new Date().toISOString()
       };
@@ -898,7 +912,7 @@ export default function ProfileView({ userId }: ProfileViewProps) {
                   <div>
                     <Label className="text-base mb-3 block">Study Style</Label>
                     <div className="grid grid-cols-2 gap-3">
-                      {["Visual", "Auditory", "Reading/Writing", "Kinesthetic"].map((style) => (
+                      {STUDY_STYLE_OPTIONS.map((style) => (
                         <div key={style} className="flex items-center space-x-2">
                           <Checkbox
                             id={`style-${style}`}

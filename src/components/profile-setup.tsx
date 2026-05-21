@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
+import { STUDY_STYLE_OPTIONS } from "@/lib/studyPreferenceOptions";
 import { Plus, X } from "lucide-react";
 
 interface ProfileSetupProps {
@@ -447,7 +448,7 @@ export default function ProfileSetup() {
               <div>
                 <Label className="text-base mb-3 block">Study Style</Label>
                 <div className="grid grid-cols-2 gap-3">
-                  {["Visual Learner", "Auditory Learner", "Hands-on", "Discussion-based"].map((style) => (
+                  {STUDY_STYLE_OPTIONS.map((style) => (
                     <div key={style} className="flex items-center space-x-2">
                       <Checkbox
                         id={style}

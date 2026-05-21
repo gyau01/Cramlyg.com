@@ -143,7 +143,7 @@ export default function MatchesView({ userId, onStartChat }: MatchesViewProps) {
                     <p className="text-xs text-gray-500 mt-1">{match.profile?.year_of_study}</p>
                   </div>
                   <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white shrink-0">
-                    {Math.round(match.compatibility_score)}%
+                    {Math.min(100, Math.round(match.compatibility_score))}%
                   </Badge>
                 </div>
               </CardHeader>
