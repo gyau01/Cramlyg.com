@@ -259,6 +259,29 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const items = e.clipboardData.items;
+
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+
+      if (file) {
+        setSelectedImage(file);
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImagePreview(reader.result as string);
+        };
+
+        reader.readAsDataURL(file);
+      }
+
+      break;
+    }
+  }
+};
+
   const clearImage = () => {
     setSelectedImage(null);
     setImagePreview(null);
@@ -538,6 +561,7 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyPress={handleKeyPress}
+                      onPaste={handlePaste}
                       placeholder="Type a message..."
                       className="flex-1"
                       disabled={uploading}
