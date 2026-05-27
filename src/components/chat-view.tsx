@@ -27,6 +27,20 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const shouldScrollRef = useRef(false);
+
+  const formatMessageTime = (createdAt: string) => {
+    const msgDate = new Date(createdAt);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const time = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (msgDate.toDateString() === today.toDateString()) return time;
+    if (msgDate.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
+    return `${msgDate.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+  };
 
   useEffect(() => {
     loadMatches();
@@ -51,7 +65,12 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
     }
   }, [selectedMatch]);
 
-
+  useEffect(() => {
+    if (shouldScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      shouldScrollRef.current = false;
+    }
+  }, [messages]);
 
   const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
@@ -295,8 +314,6 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}/${Date.now()}.${fileExt}`;
 
-    console.log('Uploading image:', fileName);
-
     const { data, error } = await supabase.storage
       .from('chat-images')
       .upload(fileName, file);
@@ -310,25 +327,22 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       .from('chat-images')
       .getPublicUrl(fileName);
 
-    console.log('Image uploaded:', publicUrl);
     return publicUrl;
   };
 
   const sendMessage = async () => {
-    if ((!newMessage.trim() && !selectedImage) || !selectedMatch) {
-      console.log('Cannot send: no content or no match selected');
-      return;
-    }
+    if ((!newMessage.trim() && !selectedImage) || !selectedMatch) return;
 
-    console.log('Sending message...', { text: newMessage, hasImage: !!selectedImage });
+    shouldScrollRef.current = true;
     setUploading(true);
     const supabase = createClient();
-    
+
     let imageUrl = null;
     if (selectedImage) {
       imageUrl = await uploadImage(selectedImage);
       if (!imageUrl) {
         setUploading(false);
+        shouldScrollRef.current = false;
         alert('Failed to upload image. Please try again.');
         return;
       }
@@ -341,8 +355,6 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       image_url: imageUrl
     };
 
-    console.log('Inserting message:', messageData);
-
     const { data, error } = await supabase
       .from("messages")
       .insert(messageData)
@@ -351,13 +363,12 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
 
     if (error) {
       console.error('Send message error:', error);
+      shouldScrollRef.current = false;
       alert('Failed to send message: ' + error.message);
     } else {
-      console.log('Message sent successfully:', data);
       setNewMessage("");
       clearImage();
-      
-      // Update the match's lastMessageTime to current time
+
       setMatches((prevMatches) => {
         const updatedMatches = prevMatches.map((match) =>
           match.id === selectedMatch.id ||
@@ -365,14 +376,13 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
             ? { ...match, lastMessageTime: new Date().toISOString() }
             : match
         );
-
         return updatedMatches.sort((a, b) => {
           const timeA = new Date(a.lastMessageTime).getTime();
           const timeB = new Date(b.lastMessageTime).getTime();
           return timeB - timeA;
         });
       });
-      
+
       setTimeout(() => {
         const ids =
           selectedMatch.allMatchIds?.length > 0
@@ -413,9 +423,8 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
 
   return (
     <>
-      {/* Image Viewer Modal */}
       {viewingImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
           onClick={() => setViewingImage(null)}
         >
@@ -425,9 +434,9 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
           >
             <X className="h-6 w-6 text-gray-800" />
           </button>
-          <img 
-            src={viewingImage} 
-            alt="Full size" 
+          <img
+            src={viewingImage}
+            alt="Full size"
             className="max-w-full max-h-full object-contain"
             onClick={(e) => e.stopPropagation()}
           />
@@ -435,7 +444,6 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
       )}
 
       <div className="grid md:grid-cols-3 gap-6 h-[600px]">
-        {/* Conversations List */}
         <Card className="md:col-span-1">
           <CardHeader>
             <CardTitle className="text-lg">Conversations</CardTitle>
@@ -475,7 +483,6 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
           </CardContent>
         </Card>
 
-        {/* Chat Area */}
         <Card className="md:col-span-2">
           {selectedMatch ? (
             <>
@@ -511,16 +518,16 @@ export default function ChatView({ userId, initialMatch }: ChatViewProps) {
                           }`}
                         >
                           {message.image_url && (
-                            <img 
-                              src={message.image_url} 
-                              alt="Shared image" 
+                            <img
+                              src={message.image_url}
+                              alt="Shared image"
                               className="rounded-lg mb-2 max-w-full h-auto cursor-pointer hover:opacity-90"
                               onClick={() => setViewingImage(message.image_url)}
                             />
                           )}
                           {message.content && <p className="text-sm">{message.content}</p>}
                           <p className={`text-xs mt-1 ${isOwnMessage(message.sender_id) ? "text-blue-100" : "text-gray-500"}`}>
-                            {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {formatMessageTime(message.created_at)}
                           </p>
                         </div>
                       </div>
